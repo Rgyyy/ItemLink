@@ -187,7 +187,11 @@ export const getTransactionById = async (req: AuthRequest, res: Response): Promi
     const transaction = await prisma.transaction.findUnique({
       where: { id },
       include: {
-        item: true,
+        item: {
+          include: {
+            game: true
+          }
+        },
         seller: {
           select: {
             id: true,

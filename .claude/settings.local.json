@@ -24,7 +24,14 @@
       "Bash(npx prisma db pull:*)",
       "Bash(nslookup:*)",
       "Bash(npm run seed:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "WebFetch(domain:m.itemmania.com)",
+      "Bash(grep:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(node test-payment.js:*)"
     ],
     "deny": [],
     "ask": []

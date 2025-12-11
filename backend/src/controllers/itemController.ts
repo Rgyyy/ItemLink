@@ -157,6 +157,7 @@ export const getItems = async (req: AuthRequest, res: Response): Promise<void> =
 export const getItemById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const userId = req.user?.userId;
 
     const item = await prisma.item.findUnique({
       where: { id },
@@ -182,15 +183,19 @@ export const getItemById = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // Increment view count
-    await prisma.item.update({
-      where: { id },
-      data: { views: { increment: 1 } }
-    });
+    // Increment view count only if not the seller and user is logged in
+    let updatedViews = item.views;
+    if (userId && item.sellerId !== userId) {
+      await prisma.item.update({
+        where: { id },
+        data: { views: { increment: 1 } }
+      });
+      updatedViews = item.views + 1;
+    }
 
     res.json({
       success: true,
-      data: { item: { ...item, views: item.views + 1 } }
+      data: { item: { ...item, views: updatedViews } }
     });
   } catch (error) {
     console.error('Get item error:', error);
@@ -221,10 +226,28 @@ export const updateItem = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    if (existingItem.sellerId !== userId && req.user?.role !== 'admin') {
+    if (existingItem.sellerId !== userId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
         message: 'Not authorized to update this item'
+      });
+      return;
+    }
+
+    // Check if there are any ongoing transactions
+    const ongoingTransactions = await prisma.transaction.count({
+      where: {
+        itemId: id,
+        status: {
+          in: ['PENDING', 'PAYMENT_WAITING', 'PAYMENT_COMPLETED', 'IN_DELIVERY', 'DELIVERED']
+        }
+      }
+    });
+
+    if (ongoingTransactions > 0) {
+      res.status(400).json({
+        success: false,
+        message: '거래가 진행중인 아이템은 수정할 수 없습니다.'
       });
       return;
     }
@@ -294,10 +317,28 @@ export const deleteItem = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    if (existingItem.sellerId !== userId && req.user?.role !== 'admin') {
+    if (existingItem.sellerId !== userId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
         message: 'Not authorized to delete this item'
+      });
+      return;
+    }
+
+    // Check if there are any ongoing transactions
+    const ongoingTransactions = await prisma.transaction.count({
+      where: {
+        itemId: id,
+        status: {
+          in: ['PENDING', 'PAYMENT_WAITING', 'PAYMENT_COMPLETED', 'IN_DELIVERY', 'DELIVERED']
+        }
+      }
+    });
+
+    if (ongoingTransactions > 0) {
+      res.status(400).json({
+        success: false,
+        message: '거래가 진행중인 아이템은 삭제할 수 없습니다.'
       });
       return;
     }

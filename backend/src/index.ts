@@ -6,6 +6,10 @@ import authRoutes from './routes/authRoutes';
 import itemRoutes from './routes/itemRoutes';
 import gameRoutes from './routes/gameRoutes';
 import transactionRoutes from './routes/transactionRoutes';
+import adminRoutes from './routes/adminRoutes';
+import reviewRoutes from './routes/reviewRoutes';
+import messageRoutes from './routes/messageRoutes';
+import paymentRoutes from './routes/paymentRoutes';
 
 dotenv.config();
 
@@ -55,6 +59,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/games', gameRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

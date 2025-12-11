@@ -9,26 +9,29 @@ datasource db {
 }
 
 model User {
-  id                 String        @id @default(uuid())
-  email              String        @unique
-  username           String        @unique
-  passwordHash       String        @map("password_hash")
-  fullName           String?       @map("full_name")
+  id                 String               @id @default(uuid())
+  email              String               @unique
+  username           String               @unique
+  passwordHash       String               @map("password_hash")
+  fullName           String?              @map("full_name")
   phone              String?
-  avatarUrl          String?       @map("avatar_url")
-  isVerified         Boolean       @default(false) @map("is_verified")
-  isActive           Boolean       @default(true) @map("is_active")
-  createdAt          DateTime      @default(now()) @map("created_at")
-  updatedAt          DateTime      @updatedAt @map("updated_at")
-  role               Role          @default(USER)
+  avatarUrl          String?              @map("avatar_url")
+  isVerified         Boolean              @default(false) @map("is_verified")
+  isActive           Boolean              @default(true) @map("is_active")
+  balance            Decimal              @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  role               Role                 @default(USER)
   favorites          Favorite[]
   items              Item[]
-  receivedMessages   Message[]     @relation("ReceiverMessages")
-  sentMessages       Message[]     @relation("SenderMessages")
-  receivedReviews    Review[]      @relation("RevieweeReviews")
-  sentReviews        Review[]      @relation("ReviewerReviews")
-  boughtTransactions Transaction[] @relation("BuyerTransactions")
-  soldTransactions   Transaction[] @relation("SellerTransactions")
+  receivedMessages   Message[]            @relation("ReceiverMessages")
+  sentMessages       Message[]            @relation("SenderMessages")
+  receivedReviews    Review[]             @relation("RevieweeReviews")
+  sentReviews        Review[]             @relation("ReviewerReviews")
+  boughtTransactions Transaction[]        @relation("BuyerTransactions")
+  soldTransactions   Transaction[]        @relation("SellerTransactions")
+  paymentTransactions PaymentTransaction[]
+  bankAccounts       BankAccount[]
   rating             UserRating?
 
   @@map("users")
@@ -180,6 +183,51 @@ model Message {
   @@map("messages")
 }
 
+model PaymentTransaction {
+  id                  String             @id @default(uuid())
+  userId              String             @map("user_id")
+  type                PaymentType
+  amount              Decimal            @db.Decimal(12, 2)
+  status              PaymentStatus      @default(PENDING)
+  paymentMethod       PaymentMethod
+  bankTransactionId   String?            @map("bank_transaction_id")
+  bankAccountId       String?            @map("bank_account_id")
+  description         String?
+  failureReason       String?            @map("failure_reason")
+  metadata            Json?
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  completedAt         DateTime?          @map("completed_at")
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount         BankAccount?       @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt(sort: Desc)])
+  @@map("payment_transactions")
+}
+
+model BankAccount {
+  id                  String               @id @default(uuid())
+  userId              String               @map("user_id")
+  bankCode            String               @map("bank_code")
+  bankName            String               @map("bank_name")
+  accountNumber       String               @map("account_number")
+  accountHolderName   String               @map("account_holder_name")
+  isDefault           Boolean              @default(false) @map("is_default")
+  isVerified          Boolean              @default(false) @map("is_verified")
+  openBankingToken    String?              @map("openbanking_token")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentTransactions PaymentTransaction[]
+
+  @@unique([userId, accountNumber])
+  @@index([userId])
+  @@map("bank_accounts")
+}
+
 enum Role {
   USER
   ADMIN
@@ -213,4 +261,23 @@ enum TransactionStatus {
   COMPLETED
   CANCELLED
   REFUNDED
+}
+
+enum PaymentType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  OPEN_BANKING
+  CARD
+  VIRTUAL_ACCOUNT
 }
