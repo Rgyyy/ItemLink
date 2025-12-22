@@ -124,6 +124,14 @@ export const depositMileage = async (req: AuthRequest, res: Response): Promise<v
 
     const validatedAmount = validateAmount(amount, 'deposit');
 
+    if (paymentMethod === PaymentMethod.BANK_TRANSFER) {
+      res.status(400).json({
+        success: false,
+        message: 'For bank transfer deposits, please use the deposit request system at /api/deposit-requests'
+      });
+      return;
+    }
+
     const result = await processPaymentTransaction(
       userId,
       PaymentType.DEPOSIT,

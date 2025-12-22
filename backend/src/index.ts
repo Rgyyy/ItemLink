@@ -10,6 +10,8 @@ import adminRoutes from './routes/adminRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import messageRoutes from './routes/messageRoutes';
 import paymentRoutes from './routes/paymentRoutes';
+import depositRequestRoutes from './routes/depositRequestRoutes';
+import payactionWebhookRoutes from './routes/payactionWebhookRoutes';
 
 dotenv.config();
 
@@ -62,6 +64,8 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/deposit-requests', depositRequestRoutes);
+app.use('/api/payaction', payactionWebhookRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 handler
@@ -86,6 +90,8 @@ app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log(`💳 Payment Provider: PayAction`);
+  console.log(`📞 Webhook URL: ${process.env.BACKEND_URL || 'http://localhost:5000'}/api/payaction/webhook`);
 });
 
 export default app;

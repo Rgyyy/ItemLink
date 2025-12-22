@@ -8,7 +8,7 @@ export class PaymentValidationError extends Error {
 }
 
 export const PAYMENT_LIMITS = {
-  MIN_DEPOSIT: 1000,
+  MIN_DEPOSIT: 1,
   MAX_DEPOSIT: 10000000,
   MIN_WITHDRAWAL: 1000,
   MAX_WITHDRAWAL: 10000000,
