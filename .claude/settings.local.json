@@ -36,7 +36,9 @@
       "WebFetch(domain:payaction.app)",
       "Bash(xargs:*)",
       "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\routes\\\\itemRoutes.ts\")",
-      "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\controllers\\\\itemController.ts\")"
+      "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\controllers\\\\itemController.ts\")",
+      "Bash(git add:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
