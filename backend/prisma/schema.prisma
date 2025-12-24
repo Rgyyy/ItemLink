@@ -8,101 +8,125 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ============================================================================
+// User Models
+// ============================================================================
+
 model User {
-  id                 String               @id @default(uuid())
-  email              String               @unique
-  username           String               @unique
-  passwordHash       String               @map("password_hash")
-  fullName           String?              @map("full_name")
-  phone              String?
-  avatarUrl          String?              @map("avatar_url")
-  isVerified         Boolean              @default(false) @map("is_verified")
-  isActive           Boolean              @default(true) @map("is_active")
-  balance            Decimal              @default(0) @db.Decimal(12, 2)
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
-  role               Role                 @default(USER)
+  id              String    @id @default(uuid())
+  email           String    @unique
+  username        String    @unique
+  passwordHash    String    @map("password_hash")
+  fullName        String?   @map("full_name")
+  phone           String?
+  avatarUrl       String?   @map("avatar_url")
+  isVerified      Boolean   @default(false) @map("is_verified")
+  isActive        Boolean   @default(true) @map("is_active")
+
+  // 신뢰 시스템 필드
+  tier            UserTier  @default(NEWBIE)
+  isBanned        Boolean   @default(false) @map("is_banned")
+  bannedUntil     DateTime? @map("banned_until")
+  bannedReason    String?   @map("banned_reason")
+
+  // 통계 필드
+  totalTrades     Int       @default(0) @map("total_trades")
+  cancelledTrades Int       @default(0) @map("cancelled_trades")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  role            Role      @default(USER)
+
+  // Relations
   favorites          Favorite[]
-  items              Item[]
+  trades             Trade[]              @relation("SellerTrades")
   receivedMessages   Message[]            @relation("ReceiverMessages")
   sentMessages       Message[]            @relation("SenderMessages")
   receivedReviews    Review[]             @relation("RevieweeReviews")
   sentReviews        Review[]             @relation("ReviewerReviews")
   boughtTransactions Transaction[]        @relation("BuyerTransactions")
   soldTransactions   Transaction[]        @relation("SellerTransactions")
-  paymentTransactions PaymentTransaction[]
-  bankAccounts       BankAccount[]
-  depositRequests    DepositRequest[]
-  processedDeposits  DepositRequest[]     @relation("ProcessedDeposits")
   rating             UserRating?
+  reportsMade        Report[]             @relation("ReporterReports")
+  reportsReceived    Report[]             @relation("ReportedUserReports")
+  processedReports   Report[]             @relation("ProcessedReports")
 
   @@map("users")
 }
 
-model Game {
-  id          String         @id @default(uuid())
-  name        String
-  slug        String         @unique
-  description String?
-  imageUrl    String?        @map("image_url")
-  isActive    Boolean        @default(true) @map("is_active")
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
-  categories  ItemCategory[]
-  items       Item[]
+model UserRating {
+  userId             String   @id @map("user_id")
+  totalReviews       Int      @default(0) @map("total_reviews")
+  averageRating      Decimal  @default(0) @map("average_rating") @db.Decimal(3, 2)
+  totalSales         Int      @default(0) @map("total_sales")
+  totalPurchases     Int      @default(0) @map("total_purchases")
 
-  @@map("games")
+  // 신규: 취소 관련 통계
+  cancelledSales     Int      @default(0) @map("cancelled_sales")
+  cancelledPurchases Int      @default(0) @map("cancelled_purchases")
+
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_ratings")
 }
 
-model ItemCategory {
-  id          String   @id @default(uuid())
-  gameId      String   @map("game_id")
-  name        String
-  slug        String
-  description String?
-  createdAt   DateTime @default(now()) @map("created_at")
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  items       Item[]
+// ============================================================================
+// Trade Models (기존 Item 모델)
+// ============================================================================
 
-  @@unique([gameId, slug])
-  @@map("item_categories")
-}
+model Trade {
+  id           String      @id @default(uuid())
+  sellerId     String      @map("seller_id")
 
-model Item {
-  id           String        @id @default(uuid())
-  sellerId     String        @map("seller_id")
-  gameId       String        @map("game_id")
-  categoryId   String?       @map("category_id")
+  // 게임 카테고리 (하드코딩된 게임명 문자열)
+  gameCategory String      @map("game_category")
+
   title        String
   description  String
-  price        Decimal       @db.Decimal(12, 2)
-  quantity     Int           @default(1)
+  price        Decimal     @db.Decimal(12, 2)
+  quantity     Int         @default(1)
   server       String?
-  images       String[]      @default([])
-  views        Int           @default(0)
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
-  itemType     ItemType      @map("item_type")
-  tradeType    TradeType     @default(SELL) @map("trade_type")
-  status       ItemStatus    @default(AVAILABLE)
+  images       String[]    @default([])
+  views        Int         @default(0)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  itemType     ItemType    @map("item_type")
+  tradeType    TradeType   @default(SELL) @map("trade_type")
+  status       TradeStatus @default(AVAILABLE)
+
+  // Relations
   favorites    Favorite[]
-  category     ItemCategory? @relation(fields: [categoryId], references: [id])
-  game         Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  seller       User          @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller       User          @relation("SellerTrades", fields: [sellerId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 
   @@index([sellerId])
-  @@index([gameId])
-  @@index([categoryId])
+  @@index([gameCategory])
   @@index([status])
   @@index([tradeType])
   @@index([createdAt(sort: Desc)])
-  @@map("items")
+  @@map("trades")
 }
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tradeId   String   @map("trade_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  trade     Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tradeId])
+  @@map("favorites")
+}
+
+// ============================================================================
+// Transaction Models
+// ============================================================================
 
 model Transaction {
   id              String            @id @default(uuid())
-  itemId          String            @map("item_id")
+  tradeId         String            @map("trade_id")
   sellerId        String            @map("seller_id")
   buyerId         String            @map("buyer_id")
   quantity        Int
@@ -110,62 +134,30 @@ model Transaction {
   paymentMethod   String?           @map("payment_method")
   meetingLocation String?           @map("meeting_location")
   notes           String?
+
+  // 취소 정보
+  cancelledBy     String?           @map("cancelled_by")
+  cancelReason    String?           @map("cancel_reason")
+
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
   completedAt     DateTime?         @map("completed_at")
-  status          TransactionStatus @default(PENDING)
+
+  // 5단계 거래 프로세스
+  status          TransactionStatus @default(REQUESTED)
+
+  // Relations
   messages        Message[]
   reviews         Review[]
   buyer           User              @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Cascade)
-  item            Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  trade           Trade             @relation(fields: [tradeId], references: [id], onDelete: Cascade)
   seller          User              @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([buyerId], map: "idx_transactions_buyer")
-  @@index([itemId], map: "idx_transactions_item")
+  @@index([tradeId], map: "idx_transactions_trade")
   @@index([sellerId], map: "idx_transactions_seller")
   @@map("transactions")
-}
-
-model Review {
-  id            String      @id @default(uuid())
-  transactionId String      @map("transaction_id")
-  reviewerId    String      @map("reviewer_id")
-  revieweeId    String      @map("reviewee_id")
-  rating        Int
-  comment       String?
-  createdAt     DateTime    @default(now()) @map("created_at")
-  reviewee      User        @relation("RevieweeReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
-  reviewer      User        @relation("ReviewerReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-
-  @@unique([transactionId, reviewerId])
-  @@index([revieweeId], map: "idx_reviews_reviewee")
-  @@map("reviews")
-}
-
-model UserRating {
-  userId         String   @id @map("user_id")
-  totalReviews   Int      @default(0) @map("total_reviews")
-  averageRating  Decimal  @default(0) @map("average_rating") @db.Decimal(3, 2)
-  totalSales     Int      @default(0) @map("total_sales")
-  totalPurchases Int      @default(0) @map("total_purchases")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("user_ratings")
-}
-
-model Favorite {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  itemId    String   @map("item_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, itemId])
-  @@map("favorites")
 }
 
 model Message {
@@ -185,101 +177,73 @@ model Message {
   @@map("messages")
 }
 
-model PaymentTransaction {
-  id                  String             @id @default(uuid())
-  userId              String             @map("user_id")
-  type                PaymentType
-  amount              Decimal            @db.Decimal(12, 2)
-  status              PaymentStatus      @default(PENDING)
-  paymentMethod       PaymentMethod
-  bankTransactionId   String?            @map("bank_transaction_id")
-  bankAccountId       String?            @map("bank_account_id")
-  description         String?
-  failureReason       String?            @map("failure_reason")
-  metadata            Json?
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
-  completedAt         DateTime?          @map("completed_at")
-  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bankAccount         BankAccount?       @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+// ============================================================================
+// Review Models
+// ============================================================================
 
-  @@index([userId])
-  @@index([status])
-  @@index([type])
-  @@index([createdAt(sort: Desc)])
-  @@map("payment_transactions")
+model Review {
+  id            String      @id @default(uuid())
+  transactionId String      @map("transaction_id")
+  reviewerId    String      @map("reviewer_id")
+  revieweeId    String      @map("reviewee_id")
+  rating        Int
+  comment       String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  reviewee      User        @relation("RevieweeReviews", fields: [revieweeId], references: [id], onDelete: Cascade)
+  reviewer      User        @relation("ReviewerReviews", fields: [reviewerId], references: [id], onDelete: Cascade)
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, reviewerId])
+  @@index([revieweeId], map: "idx_reviews_reviewee")
+  @@map("reviews")
 }
 
-model BankAccount {
-  id                  String               @id @default(uuid())
-  userId              String               @map("user_id")
-  bankCode            String               @map("bank_code")
-  bankName            String               @map("bank_name")
-  accountNumber       String               @map("account_number")
-  accountHolderName   String               @map("account_holder_name")
-  isDefault           Boolean              @default(false) @map("is_default")
-  isVerified          Boolean              @default(false) @map("is_verified")
-  openBankingToken    String?              @map("openbanking_token")
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  paymentTransactions PaymentTransaction[]
+// ============================================================================
+// Report & Safety Models
+// ============================================================================
 
-  @@unique([userId, accountNumber])
-  @@index([userId])
-  @@map("bank_accounts")
-}
+model Report {
+  id             String       @id @default(uuid())
+  reporterId     String       @map("reporter_id")
+  reportedUserId String       @map("reported_user_id")
+  transactionId  String?      @map("transaction_id")
 
-model DepositRequest {
-  id              String               @id @default(uuid())
-  userId          String               @map("user_id")
-  amount          Decimal              @db.Decimal(12, 2)
-  depositorName   String               @map("depositor_name")
-  depositDate     DateTime             @map("deposit_date")
-  receiptImage    String?              @map("receipt_image")
-  status          DepositRequestStatus @default(PENDING)
-  adminNote       String?              @map("admin_note")
-  processedBy     String?              @map("processed_by")
-  processedAt     DateTime?            @map("processed_at")
-  createdAt       DateTime             @default(now()) @map("created_at")
-  updatedAt       DateTime             @updatedAt @map("updated_at")
-  bankdaOrderId   String?              @map("bankda_order_id")
-  autoMatched     Boolean              @default(false) @map("auto_matched")
-  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  processor       User?                @relation("ProcessedDeposits", fields: [processedBy], references: [id], onDelete: SetNull)
-  matchingLogs    DepositMatchingLog[]
+  type           ReportType
+  reason         String
+  evidence       String?
 
-  @@index([userId])
+  status         ReportStatus @default(PENDING)
+  adminNote      String?      @map("admin_note")
+  processedBy    String?      @map("processed_by")
+  processedAt    DateTime?    @map("processed_at")
+
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  reporter       User         @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser   User         @relation("ReportedUserReports", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  processor      User?        @relation("ProcessedReports", fields: [processedBy], references: [id], onDelete: SetNull)
+
+  @@index([reportedUserId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
-  @@index([bankdaOrderId])
-  @@map("deposit_requests")
+  @@map("reports")
 }
 
-model DepositMatchingLog {
-  id                  String               @id @default(uuid())
-  depositRequestId    String?              @map("deposit_request_id")
-  bankdaOrderId       String?              @map("bankda_order_id")
-  bankTransactionDate DateTime?            @map("bank_transaction_date")
-  amount              Decimal              @db.Decimal(12, 2)
-  depositorName       String               @map("depositor_name")
-  matchStatus         DepositMatchStatus
-  matchedAt           DateTime?            @map("matched_at")
-  failureReason       String?              @map("failure_reason")
-  metadata            Json?
-  createdAt           DateTime             @default(now()) @map("created_at")
-  depositRequest      DepositRequest?      @relation(fields: [depositRequestId], references: [id], onDelete: SetNull)
-
-  @@index([depositRequestId])
-  @@index([bankdaOrderId])
-  @@index([matchStatus])
-  @@index([createdAt(sort: Desc)])
-  @@map("deposit_matching_logs")
-}
+// ============================================================================
+// Enums
+// ============================================================================
 
 enum Role {
   USER
   ADMIN
+}
+
+enum UserTier {
+  NEWBIE   // 거래 0-5건
+  NORMAL   // 거래 6-20건, 평점 3.0+
+  TRUSTED  // 거래 21-50건, 평점 4.0+
+  VETERAN  // 거래 51건+, 평점 4.5+
 }
 
 enum ItemType {
@@ -294,7 +258,7 @@ enum TradeType {
   BUY
 }
 
-enum ItemStatus {
+enum TradeStatus {
   AVAILABLE
   RESERVED
   SOLD
@@ -302,46 +266,25 @@ enum ItemStatus {
 }
 
 enum TransactionStatus {
-  PENDING
-  PAYMENT_WAITING
-  PAYMENT_COMPLETED
-  IN_DELIVERY
-  DELIVERED
-  COMPLETED
-  CANCELLED
-  REFUNDED
+  REQUESTED          // 1. 거래 신청
+  CONDITIONS_AGREED  // 2. 조건 확인
+  ITEM_DELIVERED     // 3. 아이템 전달
+  PAYMENT_COMPLETED  // 4. 입금 완료
+  COMPLETED          // 5. 거래 완료
+  CANCELLED          // 취소됨
 }
 
-enum PaymentType {
-  DEPOSIT
-  WITHDRAWAL
+enum ReportType {
+  SCAM              // 사기
+  ITEM_NOT_SENT     // 아이템 미전달
+  PAYMENT_NOT_SENT  // 입금 미완료
+  ABUSE             // 욕설/비방
+  OTHER             // 기타
 }
 
-enum PaymentStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  CANCELLED
-}
-
-enum PaymentMethod {
-  OPEN_BANKING
-  CARD
-  VIRTUAL_ACCOUNT
-  BANK_TRANSFER
-}
-
-enum DepositRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum DepositMatchStatus {
-  PENDING
-  MATCHED
-  CONFIRMED
-  FAILED
-  MANUAL
+enum ReportStatus {
+  PENDING    // 대기중
+  REVIEWING  // 검토중
+  RESOLVED   // 해결됨
+  REJECTED   // 반려됨
 }

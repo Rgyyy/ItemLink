@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/prisma';
+import { UserTier } from '@prisma/client';
 
 // Create Review
 export const createReview = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -37,7 +38,7 @@ export const createReview = async (req: AuthRequest, res: Response): Promise<voi
     // Check if transaction exists and is completed
     const transaction = await prisma.transaction.findUnique({
       where: { id: transactionId },
-      include: { item: true }
+      include: { trade: true }
     });
 
     if (!transaction) {
@@ -122,7 +123,7 @@ export const createReview = async (req: AuthRequest, res: Response): Promise<voi
         transaction: {
           select: {
             id: true,
-            item: {
+            trade: {
               select: {
                 title: true
               }
@@ -247,7 +248,7 @@ export const getReviewById = async (req: AuthRequest, res: Response): Promise<vo
         transaction: {
           select: {
             id: true,
-            item: {
+            trade: {
               select: {
                 title: true
               }
@@ -431,7 +432,7 @@ export const deleteReview = async (req: AuthRequest, res: Response): Promise<voi
   }
 };
 
-// Helper function to update UserRating
+// Helper function to update UserRating and User Tier
 async function updateUserRating(userId: string): Promise<void> {
   try {
     // Get all reviews for the user
@@ -444,8 +445,8 @@ async function updateUserRating(userId: string): Promise<void> {
       ? reviews.reduce((sum, review) => sum + review.rating, 0) / totalReviews
       : 0;
 
-    // Get transaction counts
-    const [totalSales, totalPurchases] = await Promise.all([
+    // Get transaction counts (including cancelled transactions)
+    const [totalSales, totalPurchases, cancelledSales, cancelledPurchases] = await Promise.all([
       prisma.transaction.count({
         where: {
           sellerId: userId,
@@ -457,10 +458,37 @@ async function updateUserRating(userId: string): Promise<void> {
           buyerId: userId,
           status: 'COMPLETED'
         }
+      }),
+      prisma.transaction.count({
+        where: {
+          sellerId: userId,
+          status: 'CANCELLED',
+          cancelledBy: 'seller'
+        }
+      }),
+      prisma.transaction.count({
+        where: {
+          buyerId: userId,
+          status: 'CANCELLED',
+          cancelledBy: 'buyer'
+        }
       })
     ]);
 
-    // Upsert UserRating
+    const totalTrades = totalSales + totalPurchases;
+    const cancelledTrades = cancelledSales + cancelledPurchases;
+
+    // Calculate user tier based on trades and rating
+    let tier = UserTier.NEWBIE;
+    if (totalTrades >= 51 && averageRating >= 4.5) {
+      tier = UserTier.VETERAN;
+    } else if (totalTrades >= 21 && averageRating >= 4.0) {
+      tier = UserTier.TRUSTED;
+    } else if (totalTrades >= 6 && averageRating >= 3.0) {
+      tier = UserTier.NORMAL;
+    }
+
+    // Upsert UserRating with cancel statistics
     await prisma.userRating.upsert({
       where: { userId },
       create: {
@@ -468,13 +496,27 @@ async function updateUserRating(userId: string): Promise<void> {
         totalReviews,
         averageRating,
         totalSales,
-        totalPurchases
+        totalPurchases,
+        cancelledSales,
+        cancelledPurchases
       },
       update: {
         totalReviews,
         averageRating,
         totalSales,
-        totalPurchases
+        totalPurchases,
+        cancelledSales,
+        cancelledPurchases
+      }
+    });
+
+    // Update User tier and total trades
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        tier,
+        totalTrades,
+        cancelledTrades
       }
     });
   } catch (error) {

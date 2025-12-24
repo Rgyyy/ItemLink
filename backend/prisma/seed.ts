@@ -1,19 +1,19 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, UserTier } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { GAME_CATEGORIES } from '../src/constants/games';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Starting seed...');
 
-  // Clear existing data
+  // Clear existing data (새로운 모델 순서)
   await prisma.favorite.deleteMany();
   await prisma.message.deleteMany();
   await prisma.review.deleteMany();
+  await prisma.report.deleteMany();
   await prisma.transaction.deleteMany();
-  await prisma.item.deleteMany();
-  await prisma.itemCategory.deleteMany();
-  await prisma.game.deleteMany();
+  await prisma.trade.deleteMany();
   await prisma.userRating.deleteMany();
   await prisma.user.deleteMany();
 
@@ -30,6 +30,7 @@ async function main() {
       fullName: '김철수',
       phone: '010-1234-5678',
       isVerified: true,
+      tier: UserTier.NORMAL, // 일반 등급
     },
   });
 
@@ -41,6 +42,19 @@ async function main() {
       fullName: '이영희',
       phone: '010-9876-5432',
       isVerified: true,
+      tier: UserTier.TRUSTED, // 신뢰 등급
+    },
+  });
+
+  const user3 = await prisma.user.create({
+    data: {
+      email: 'user3@example.com',
+      username: 'trader789',
+      passwordHash: hashedPassword,
+      fullName: '박지성',
+      phone: '010-5555-6666',
+      isVerified: true,
+      tier: UserTier.VETERAN, // 베테랑 등급
     },
   });
 
@@ -52,116 +66,21 @@ async function main() {
       fullName: '관리자',
       role: 'ADMIN',
       isVerified: true,
+      tier: UserTier.VETERAN,
     },
   });
 
   console.log('Created users');
 
-  // Create games
-  const lostArk = await prisma.game.create({
-    data: {
-      name: '로스트아크',
-      slug: 'lost-ark',
-      description: '액션 RPG MMORPG',
-      imageUrl: 'https://cdn.lostark.game/2024/upload/2024_LOGO.png',
-    },
-  });
-
-  const wow = await prisma.game.create({
-    data: {
-      name: '월드 오브 워크래프트',
-      slug: 'world-of-warcraft',
-      description: 'MMORPG의 전설',
-      imageUrl: 'https://example.com/wow.jpg',
-    },
-  });
-
-  const maple = await prisma.game.create({
-    data: {
-      name: '메이플스토리',
-      slug: 'maplestory',
-      description: '2D 횡스크롤 MMORPG',
-      imageUrl: 'https://example.com/maple.jpg',
-    },
-  });
-
-  const lineage = await prisma.game.create({
-    data: {
-      name: '리니지M',
-      slug: 'lineage-m',
-      description: '모바일 MMORPG',
-      imageUrl: 'https://example.com/lineage.jpg',
-    },
-  });
-
-  const dnf = await prisma.game.create({
-    data: {
-      name: '던전앤파이터',
-      slug: 'dungeon-and-fighter',
-      description: '액션 횡스크롤 RPG',
-      imageUrl: 'https://example.com/dnf.jpg',
-    },
-  });
-
-  console.log('Created games');
-
-  // Create categories
-  const lostArkGold = await prisma.itemCategory.create({
-    data: {
-      gameId: lostArk.id,
-      name: '골드',
-      slug: 'gold',
-      description: '로스트아크 골드',
-    },
-  });
-
-  const lostArkItem = await prisma.itemCategory.create({
-    data: {
-      gameId: lostArk.id,
-      name: '아이템',
-      slug: 'item',
-      description: '게임 아이템',
-    },
-  });
-
-  const mapleCategory = await prisma.itemCategory.create({
-    data: {
-      gameId: maple.id,
-      name: '메소',
-      slug: 'meso',
-      description: '메이플스토리 메소',
-    },
-  });
-
-  const dnfGold = await prisma.itemCategory.create({
-    data: {
-      gameId: dnf.id,
-      name: '게임머니',
-      slug: 'game-money',
-      description: '던전앤파이터 골드',
-    },
-  });
-
-  const dnfItem = await prisma.itemCategory.create({
-    data: {
-      gameId: dnf.id,
-      name: '게임아이템',
-      slug: 'game-item',
-      description: '던전앤파이터 게임 아이템',
-    },
-  });
-
-  console.log('Created categories');
-
-  // Create items
-  await prisma.item.createMany({
+  // Create trades (기존 items)
+  await prisma.trade.createMany({
     data: [
+      // 로스트아크 거래글
       {
         sellerId: user1.id,
-        gameId: lostArk.id,
-        categoryId: lostArkGold.id,
-        title: '로스트아크 골드 100만골드 판매',
-        description: '안전하고 빠른 거래! 직거래 가능합니다.',
+        gameCategory: '로스트아크',
+        title: '[로스트아크] 골드 100만골드 판매',
+        description: '안전하고 빠른 거래! 직거래 가능합니다.\n아만 서버 골드 판매합니다.\n쪽지 또는 채팅으로 연락주세요.',
         price: 50000,
         quantity: 10,
         server: '아만',
@@ -170,10 +89,9 @@ async function main() {
       },
       {
         sellerId: user2.id,
-        gameId: lostArk.id,
-        categoryId: lostArkItem.id,
-        title: '상급 오레하 융화 재료 10개',
-        description: '급처! 빠른 거래 원합니다.',
+        gameCategory: '로스트아크',
+        title: '[로스트아크] 상급 오레하 융화 재료 10개',
+        description: '급처! 빠른 거래 원합니다.\n루페온 서버입니다.',
         price: 15000,
         quantity: 5,
         server: '루페온',
@@ -181,11 +99,23 @@ async function main() {
         status: 'AVAILABLE',
       },
       {
+        sellerId: user2.id,
+        gameCategory: '로스트아크',
+        title: '[로스트아크] 골드 500만골드 대량판매',
+        description: '대량 구매시 할인 가능! 쪽지주세요.\n안전거래 보장합니다.',
+        price: 230000,
+        quantity: 20,
+        server: '아만',
+        itemType: 'GAME_MONEY',
+        status: 'AVAILABLE',
+      },
+
+      // 메이플스토리 거래글
+      {
         sellerId: user1.id,
-        gameId: maple.id,
-        categoryId: mapleCategory.id,
-        title: '메이플스토리 메소 10억',
-        description: '안전거래! 1:1 직거래',
+        gameCategory: '메이플스토리',
+        title: '[메이플스토리] 메소 10억 판매',
+        description: '안전거래! 1:1 직거래\n스카니아 서버 메소입니다.',
         price: 80000,
         quantity: 1,
         server: '스카니아',
@@ -193,45 +123,49 @@ async function main() {
         status: 'AVAILABLE',
       },
       {
+        sellerId: user3.id,
+        gameCategory: '메이플스토리',
+        title: '[메이플스토리] 메소 50억 대량판매',
+        description: '대량 거래 환영합니다.\n신뢰거래 보장!',
+        price: 380000,
+        quantity: 3,
+        server: '스카니아',
+        itemType: 'GAME_MONEY',
+        status: 'AVAILABLE',
+      },
+
+      // 월드 오브 워크래프트 거래글
+      {
         sellerId: user2.id,
-        gameId: wow.id,
-        title: 'WoW 골드 500만골드',
-        description: '미국 서버 골드 판매합니다.',
+        gameCategory: '월드 오브 워크래프트',
+        title: '[WoW] 골드 500만골드 판매',
+        description: '미국 서버 골드 판매합니다.\n빠른 거래 가능합니다.',
         price: 100000,
         quantity: 3,
         server: 'US-Stormrage',
         itemType: 'GAME_MONEY',
         status: 'AVAILABLE',
       },
+
+      // 리니지M 거래글
       {
         sellerId: user1.id,
-        gameId: lineage.id,
-        title: '리니지M 아덴 1억',
-        description: '빠른 거래, 안전거래 보장',
+        gameCategory: '리니지M',
+        title: '[리니지M] 아덴 1억 판매',
+        description: '빠른 거래, 안전거래 보장\n켄라우헬 서버입니다.',
         price: 120000,
         quantity: 2,
         server: '켄라우헬',
         itemType: 'GAME_MONEY',
         status: 'AVAILABLE',
       },
-      {
-        sellerId: user2.id,
-        gameId: lostArk.id,
-        categoryId: lostArkGold.id,
-        title: '로스트아크 골드 500만골드 대량판매',
-        description: '대량 구매시 할인 가능! 쪽지주세요.',
-        price: 230000,
-        quantity: 20,
-        server: '아만',
-        itemType: 'GAME_MONEY',
-        status: 'AVAILABLE',
-      },
+
+      // 던전앤파이터 거래글
       {
         sellerId: user1.id,
-        gameId: dnf.id,
-        categoryId: dnfGold.id,
-        title: '던전앤파이터 골드 1억 판매',
-        description: '안전하고 빠른 거래! 직거래 가능합니다.',
+        gameCategory: '던전앤파이터',
+        title: '[던파] 골드 1억 판매',
+        description: '안전하고 빠른 거래! 직거래 가능합니다.\n카인 서버 골드입니다.',
         price: 45000,
         quantity: 5,
         server: '카인',
@@ -240,10 +174,9 @@ async function main() {
       },
       {
         sellerId: user2.id,
-        gameId: dnf.id,
-        categoryId: dnfItem.id,
-        title: '+12 증폭 무기 판매',
-        description: '희귀 옵션 붙은 무기입니다. 급처!',
+        gameCategory: '던전앤파이터',
+        title: '[던파] +12 증폭 무기 판매',
+        description: '희귀 옵션 붙은 무기입니다. 급처!\n카인 서버 귀검사 무기입니다.',
         price: 150000,
         quantity: 1,
         server: '카인',
@@ -252,10 +185,9 @@ async function main() {
       },
       {
         sellerId: user1.id,
-        gameId: dnf.id,
-        categoryId: dnfItem.id,
-        title: '에픽 장비 세트 판매',
-        description: '풀셋 판매합니다. 쪽지주세요.',
+        gameCategory: '던전앤파이터',
+        title: '[던파] 에픽 장비 세트 판매',
+        description: '풀셋 판매합니다. 쪽지주세요.\n디레지에 서버입니다.',
         price: 200000,
         quantity: 1,
         server: '디레지에',
@@ -264,22 +196,74 @@ async function main() {
       },
       {
         sellerId: user2.id,
-        gameId: dnf.id,
-        categoryId: dnfGold.id,
-        title: '던파 골드 5억 대량판매',
-        description: '대량 구매시 할인! 안전거래 보장',
+        gameCategory: '던전앤파이터',
+        title: '[던파] 골드 5억 대량판매',
+        description: '대량 구매시 할인! 안전거래 보장\n카인 서버 거래 가능합니다.',
         price: 200000,
         quantity: 10,
         server: '카인',
         itemType: 'GAME_MONEY',
         status: 'AVAILABLE',
       },
+      {
+        sellerId: user3.id,
+        gameCategory: '던전앤파이터',
+        title: '[던파] 계정 판매 (레벨 110)',
+        description: '레벨 110 풀 강화 계정 판매합니다.\n신뢰거래만 원합니다.',
+        price: 500000,
+        quantity: 1,
+        server: '카인',
+        itemType: 'ACCOUNT',
+        status: 'AVAILABLE',
+      },
     ],
   });
 
-  console.log('Created items');
+  console.log('Created trades');
+
+  // Create UserRatings for users with activity
+  await prisma.userRating.createMany({
+    data: [
+      {
+        userId: user1.id,
+        totalReviews: 8,
+        averageRating: 4.2,
+        totalSales: 12,
+        totalPurchases: 3,
+        cancelledSales: 1,
+        cancelledPurchases: 0,
+      },
+      {
+        userId: user2.id,
+        totalReviews: 15,
+        averageRating: 4.6,
+        totalSales: 25,
+        totalPurchases: 8,
+        cancelledSales: 0,
+        cancelledPurchases: 1,
+      },
+      {
+        userId: user3.id,
+        totalReviews: 42,
+        averageRating: 4.8,
+        totalSales: 56,
+        totalPurchases: 12,
+        cancelledSales: 2,
+        cancelledPurchases: 0,
+      },
+    ],
+  });
+
+  console.log('Created user ratings');
 
   console.log('Seed completed successfully!');
+  console.log(`Supported game categories: ${GAME_CATEGORIES.join(', ')}`);
+  console.log('\nTest accounts:');
+  console.log('- user1@example.com (NORMAL tier)');
+  console.log('- user2@example.com (TRUSTED tier)');
+  console.log('- user3@example.com (VETERAN tier)');
+  console.log('- admin@example.com (Admin)');
+  console.log('Password for all: password123');
 }
 
 main()

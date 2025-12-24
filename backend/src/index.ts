@@ -3,15 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import prisma from './config/prisma';
 import authRoutes from './routes/authRoutes';
-import itemRoutes from './routes/itemRoutes';
-import gameRoutes from './routes/gameRoutes';
+import tradeRoutes from './routes/tradeRoutes';
 import transactionRoutes from './routes/transactionRoutes';
 import adminRoutes from './routes/adminRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import messageRoutes from './routes/messageRoutes';
-import paymentRoutes from './routes/paymentRoutes';
-import depositRequestRoutes from './routes/depositRequestRoutes';
-import payactionWebhookRoutes from './routes/payactionWebhookRoutes';
+import reportRoutes from './routes/reportRoutes';
 
 dotenv.config();
 
@@ -39,11 +36,13 @@ app.get('/health', (req: Request, res: Response) => {
 app.get('/api/test-db', async (req: Request, res: Response) => {
   try {
     await prisma.$queryRaw`SELECT NOW()`;
-    const gamesCount = await prisma.game.count();
+    const tradesCount = await prisma.trade.count();
+    const usersCount = await prisma.user.count();
     res.json({
       success: true,
       message: 'Database connected successfully',
-      gamesCount,
+      tradesCount,
+      usersCount,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -58,14 +57,11 @@ app.get('/api/test-db', async (req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/items', itemRoutes);
-app.use('/api/games', gameRoutes);
+app.use('/api/trades', tradeRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/messages', messageRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/deposit-requests', depositRequestRoutes);
-app.use('/api/payaction', payactionWebhookRoutes);
+app.use('/api/reports', reportRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 handler
@@ -90,8 +86,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-  console.log(`💳 Payment Provider: PayAction`);
-  console.log(`📞 Webhook URL: ${process.env.BACKEND_URL || 'http://localhost:5000'}/api/payaction/webhook`);
+  console.log(`🎮 ItemLink Direct Trade Platform`);
 });
 
 export default app;

@@ -1,23 +1,25 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/prisma';
+import { ReportStatus } from '@prisma/client';
 
 // Dashboard Stats
 export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const [usersCount, itemsCount, gamesCount, transactionsCount, reviewsCount] = await Promise.all([
+    const [usersCount, tradesCount, transactionsCount, reviewsCount, pendingReports, bannedUsers] = await Promise.all([
       prisma.user.count(),
-      prisma.item.count(),
-      prisma.game.count(),
+      prisma.trade.count(),
       prisma.transaction.count(),
-      prisma.review.count()
+      prisma.review.count(),
+      prisma.report.count({ where: { status: ReportStatus.PENDING } }),
+      prisma.user.count({ where: { isBanned: true } })
     ]);
 
     const recentTransactions = await prisma.transaction.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
-        item: { select: { title: true } },
+        trade: { select: { title: true } },
         buyer: { select: { username: true } },
         seller: { select: { username: true } }
       }
@@ -28,10 +30,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
       data: {
         stats: {
           users: usersCount,
-          items: itemsCount,
-          games: gamesCount,
+          trades: tradesCount,
           transactions: transactionsCount,
-          reviews: reviewsCount
+          reviews: reviewsCount,
+          pendingReports,
+          bannedUsers
         },
         recentTransactions
       }
@@ -148,6 +151,16 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
 export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const currentAdminId = req.user?.userId;
+
+    // 관리자가 자신을 삭제하려고 하는지 확인
+    if (id === currentAdminId) {
+      res.status(403).json({
+        success: false,
+        message: 'Cannot delete your own account'
+      });
+      return;
+    }
 
     await prisma.user.delete({
       where: { id }
@@ -167,8 +180,8 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
   }
 };
 
-// Items Management
-export const getAllItems = async (req: AuthRequest, res: Response): Promise<void> => {
+// Trades Management
+export const getAllTrades = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page = 1, limit = 20, search = '', status = '' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
@@ -184,24 +197,23 @@ export const getAllItems = async (req: AuthRequest, res: Response): Promise<void
       where.status = status;
     }
 
-    const [items, total] = await Promise.all([
-      prisma.item.findMany({
+    const [trades, total] = await Promise.all([
+      prisma.trade.findMany({
         where,
         skip,
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          seller: { select: { username: true, email: true } },
-          game: { select: { name: true } }
+          seller: { select: { username: true, email: true, tier: true } }
         }
       }),
-      prisma.item.count({ where })
+      prisma.trade.count({ where })
     ]);
 
     res.json({
       success: true,
       data: {
-        items,
+        trades,
         pagination: {
           page: Number(page),
           limit: Number(limit),
@@ -211,185 +223,60 @@ export const getAllItems = async (req: AuthRequest, res: Response): Promise<void
       }
     });
   } catch (error) {
-    console.error('Get items error:', error);
+    console.error('Get trades error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get items',
+      message: 'Failed to get trades',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const updateItem = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    const item = await prisma.item.update({
+    const trade = await prisma.trade.update({
       where: { id },
       data: { status },
       include: {
-        seller: { select: { username: true } },
-        game: { select: { name: true } }
+        seller: { select: { username: true } }
       }
     });
 
     res.json({
       success: true,
-      message: 'Item updated successfully',
-      data: item
+      message: 'Trade updated successfully',
+      data: trade
     });
   } catch (error) {
-    console.error('Update item error:', error);
+    console.error('Update trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update item',
+      message: 'Failed to update trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const deleteItem = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
-    await prisma.item.delete({
+    await prisma.trade.delete({
       where: { id }
     });
 
     res.json({
       success: true,
-      message: 'Item deleted successfully'
+      message: 'Trade deleted successfully'
     });
   } catch (error) {
-    console.error('Delete item error:', error);
+    console.error('Delete trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete item',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
-
-// Games Management
-export const getAllGames = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [games, total] = await Promise.all([
-      prisma.game.findMany({
-        skip,
-        take: Number(limit),
-        orderBy: { createdAt: 'desc' },
-        include: {
-          _count: {
-            select: { items: true }
-          }
-        }
-      }),
-      prisma.game.count()
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        games,
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total,
-          totalPages: Math.ceil(total / Number(limit))
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Get games error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get games',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
-
-export const createGame = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { name, slug, description, imageUrl, isActive } = req.body;
-
-    const game = await prisma.game.create({
-      data: {
-        name,
-        slug,
-        description,
-        imageUrl,
-        isActive: isActive ?? true
-      }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Game created successfully',
-      data: game
-    });
-  } catch (error) {
-    console.error('Create game error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create game',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
-
-export const updateGame = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { name, slug, description, imageUrl, isActive } = req.body;
-
-    const game = await prisma.game.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(slug && { slug }),
-        ...(description !== undefined && { description }),
-        ...(imageUrl !== undefined && { imageUrl }),
-        ...(typeof isActive === 'boolean' && { isActive })
-      }
-    });
-
-    res.json({
-      success: true,
-      message: 'Game updated successfully',
-      data: game
-    });
-  } catch (error) {
-    console.error('Update game error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update game',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
-
-export const deleteGame = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-
-    await prisma.game.delete({
-      where: { id }
-    });
-
-    res.json({
-      success: true,
-      message: 'Game deleted successfully'
-    });
-  } catch (error) {
-    console.error('Delete game error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete game',
+      message: 'Failed to delete trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -402,7 +289,7 @@ export const getAllTransactions = async (req: AuthRequest, res: Response): Promi
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: any = {};
-    if (status && ['PENDING', 'PAYMENT_WAITING', 'PAYMENT_COMPLETED', 'IN_DELIVERY', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'REFUNDED'].includes(status as string)) {
+    if (status && ['REQUESTED', 'CONDITIONS_AGREED', 'ITEM_DELIVERED', 'PAYMENT_COMPLETED', 'COMPLETED', 'CANCELLED'].includes(status as string)) {
       where.status = status;
     }
 
@@ -413,7 +300,7 @@ export const getAllTransactions = async (req: AuthRequest, res: Response): Promi
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          item: { select: { title: true, price: true } },
+          trade: { select: { title: true, price: true } },
           buyer: { select: { username: true, email: true } },
           seller: { select: { username: true, email: true } }
         }
@@ -455,7 +342,7 @@ export const updateTransaction = async (req: AuthRequest, res: Response): Promis
         ...(status === 'COMPLETED' && !req.body.completedAt && { completedAt: new Date() })
       },
       include: {
-        item: { select: { title: true } },
+        trade: { select: { title: true } },
         buyer: { select: { username: true } },
         seller: { select: { username: true } }
       }
@@ -492,7 +379,7 @@ export const getAllReviews = async (req: AuthRequest, res: Response): Promise<vo
           reviewee: { select: { username: true, email: true } },
           transaction: {
             select: {
-              item: { select: { title: true } }
+              trade: { select: { title: true } }
             }
           }
         }
@@ -539,6 +426,160 @@ export const deleteReview = async (req: AuthRequest, res: Response): Promise<voi
     res.status(500).json({
       success: false,
       message: 'Failed to delete review',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+// Reports Management
+export const getReports = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { page = 1, limit = 20, status = '', type = '' } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = {};
+    if (status) {
+      where.status = status as ReportStatus;
+    }
+    if (type) {
+      where.type = type;
+    }
+
+    const [reports, total] = await Promise.all([
+      prisma.report.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        orderBy: { createdAt: 'desc' },
+        include: {
+          reporter: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            }
+          },
+          reportedUser: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              tier: true,
+              isBanned: true,
+            }
+          },
+          processor: {
+            select: {
+              id: true,
+              username: true,
+            }
+          }
+        }
+      }),
+      prisma.report.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        reports,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          totalPages: Math.ceil(total / Number(limit))
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get reports error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get reports',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+export const processReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const adminId = req.user?.userId;
+    const { id } = req.params;
+    const { status, adminNote, banUser, banDuration } = req.body;
+
+    if (!status || !adminNote) {
+      res.status(400).json({
+        success: false,
+        message: 'Status and admin note are required'
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const report = await tx.report.findUnique({
+        where: { id },
+        select: { reportedUserId: true }
+      });
+
+      if (!report) {
+        throw new Error('Report not found');
+      }
+
+      // 신고 처리
+      const updatedReport = await tx.report.update({
+        where: { id },
+        data: {
+          status: status as ReportStatus,
+          adminNote,
+          processedBy: adminId!,
+          processedAt: new Date()
+        },
+        include: {
+          reporter: {
+            select: { id: true, username: true }
+          },
+          reportedUser: {
+            select: { id: true, username: true, tier: true }
+          },
+          processor: {
+            select: { id: true, username: true }
+          }
+        }
+      });
+
+      // 사용자 제재
+      if (banUser) {
+        let bannedUntil: Date | null = null;
+
+        if (banDuration) {
+          bannedUntil = new Date();
+          bannedUntil.setDate(bannedUntil.getDate() + parseInt(banDuration));
+        }
+
+        await tx.user.update({
+          where: { id: report.reportedUserId },
+          data: {
+            isBanned: true,
+            bannedUntil,
+            bannedReason: adminNote
+          }
+        });
+      }
+
+      return updatedReport;
+    });
+
+    res.json({
+      success: true,
+      message: 'Report processed successfully',
+      data: { report: result }
+    });
+  } catch (error) {
+    console.error('Process report error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to process report';
+    res.status(400).json({
+      success: false,
+      message,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

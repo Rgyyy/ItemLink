@@ -1,14 +1,14 @@
 import { Response } from 'express';
 import prisma from '../config/prisma';
 import { AuthRequest } from '../middleware/auth';
-import { ItemType, ItemStatus } from '@prisma/client';
+import { ItemType, TradeStatus } from '@prisma/client';
+import { GAME_CATEGORIES } from '../constants/games';
 
-export const createItem = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.userId;
     const {
-      gameId,
-      categoryId,
+      gameCategory,
       title,
       description,
       price,
@@ -20,15 +20,26 @@ export const createItem = async (req: AuthRequest, res: Response): Promise<void>
     } = req.body;
 
     // Validation
-    if (!gameId || !title || !description || !price || !itemType) {
+    if (!gameCategory || !title || !description) {
       res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields (gameCategory, title, description)'
       });
       return;
     }
 
-    if (price < 0) {
+    // 게임 카테고리 검증 - 하드코딩된 목록에 없어도 허용 (사용자 직접 입력)
+    // 단, 빈 값은 불가
+    if (!gameCategory.trim()) {
+      res.status(400).json({
+        success: false,
+        message: 'Game category cannot be empty'
+      });
+      return;
+    }
+
+    // Price 검증 - 선택사항, 있으면 음수만 체크
+    if (price !== undefined && price < 0) {
       res.status(400).json({
         success: false,
         message: 'Price must be non-negative'
@@ -36,17 +47,16 @@ export const createItem = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const item = await prisma.item.create({
+    const trade = await prisma.trade.create({
       data: {
         sellerId: userId!,
-        gameId,
-        categoryId: categoryId || null,
-        title,
-        description,
-        price,
+        gameCategory: gameCategory.trim(),
+        title: title.trim(),
+        description: description.trim(),
+        price: price || 0,
         quantity: quantity || 1,
         server: server || null,
-        itemType: itemType as ItemType,
+        itemType: (itemType as ItemType) || 'OTHER',
         tradeType: tradeType || 'SELL',
         images: images || [],
       },
@@ -56,33 +66,32 @@ export const createItem = async (req: AuthRequest, res: Response): Promise<void>
             id: true,
             username: true,
             avatarUrl: true,
+            tier: true,
+            rating: true,
           }
         },
-        game: true,
-        category: true,
       }
     });
 
     res.status(201).json({
       success: true,
-      message: 'Item created successfully',
-      data: { item }
+      message: 'Trade created successfully',
+      data: { trade }
     });
   } catch (error) {
-    console.error('Create item error:', error);
+    console.error('Create trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create item',
+      message: 'Failed to create trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const getItems = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getTrades = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
-      gameId,
-      categoryId,
+      gameCategory,
       itemType,
       tradeType,
       minPrice,
@@ -99,18 +108,17 @@ export const getItems = async (req: AuthRequest, res: Response): Promise<void> =
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = {
-      status: status as ItemStatus,
+      status: status as TradeStatus,
     };
 
-    if (gameId) where.gameId = gameId as string;
-    if (categoryId) where.categoryId = categoryId as string;
+    if (gameCategory) where.gameCategory = gameCategory as string;
     if (itemType) where.itemType = itemType as ItemType;
     if (tradeType) where.tradeType = tradeType as string;
     if (minPrice) where.price = { ...where.price, gte: parseFloat(minPrice as string) };
     if (maxPrice) where.price = { ...where.price, lte: parseFloat(maxPrice as string) };
 
-    const [items, total] = await Promise.all([
-      prisma.item.findMany({
+    const [trades, total] = await Promise.all([
+      prisma.trade.findMany({
         where,
         include: {
           seller: {
@@ -118,10 +126,10 @@ export const getItems = async (req: AuthRequest, res: Response): Promise<void> =
               id: true,
               username: true,
               avatarUrl: true,
+              tier: true,
+              rating: true,
             }
           },
-          game: true,
-          category: true,
         },
         orderBy: {
           [sort as string]: order === 'asc' ? 'asc' : 'desc'
@@ -129,13 +137,13 @@ export const getItems = async (req: AuthRequest, res: Response): Promise<void> =
         skip,
         take: limitNum,
       }),
-      prisma.item.count({ where })
+      prisma.trade.count({ where })
     ]);
 
     res.json({
       success: true,
       data: {
-        items,
+        trades,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -145,21 +153,21 @@ export const getItems = async (req: AuthRequest, res: Response): Promise<void> =
       }
     });
   } catch (error) {
-    console.error('Get items error:', error);
+    console.error('Get trades error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get items',
+      message: 'Failed to get trades',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const getItemById = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getTradeById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const userId = req.user?.userId;
 
-    const item = await prisma.item.findUnique({
+    const trade = await prisma.trade.findUnique({
       where: { id },
       include: {
         seller: {
@@ -167,79 +175,78 @@ export const getItemById = async (req: AuthRequest, res: Response): Promise<void
             id: true,
             username: true,
             avatarUrl: true,
+            tier: true,
             rating: true,
           }
         },
-        game: true,
-        category: true,
       }
     });
 
-    if (!item) {
+    if (!trade) {
       res.status(404).json({
         success: false,
-        message: 'Item not found'
+        message: 'Trade not found'
       });
       return;
     }
 
     // Increment view count only if not the seller and user is logged in
-    let updatedViews = item.views;
-    if (userId && item.sellerId !== userId) {
-      await prisma.item.update({
+    let updatedViews = trade.views;
+    if (userId && trade.sellerId !== userId) {
+      await prisma.trade.update({
         where: { id },
         data: { views: { increment: 1 } }
       });
-      updatedViews = item.views + 1;
+      updatedViews = trade.views + 1;
     }
 
     res.json({
       success: true,
-      data: { item: { ...item, views: updatedViews } }
+      data: { trade: { ...trade, views: updatedViews } }
     });
   } catch (error) {
-    console.error('Get item error:', error);
+    console.error('Get trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to get item',
+      message: 'Failed to get trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const updateItem = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
-    const { title, description, price, quantity, status, images } = req.body;
+    const { gameCategory, title, description, price, quantity, status, images } = req.body;
 
-    const existingItem = await prisma.item.findUnique({
+    const existingTrade = await prisma.trade.findUnique({
       where: { id },
       select: { sellerId: true }
     });
 
-    if (!existingItem) {
+    if (!existingTrade) {
       res.status(404).json({
         success: false,
-        message: 'Item not found'
+        message: 'Trade not found'
       });
       return;
     }
 
-    if (existingItem.sellerId !== userId && req.user?.role !== 'ADMIN') {
+    if (existingTrade.sellerId !== userId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
-        message: 'Not authorized to update this item'
+        message: 'Not authorized to update this trade'
       });
       return;
     }
 
-    // Check if there are any ongoing transactions
+    // Check if there are any ongoing transactions (새로운 5단계 상태)
     const ongoingTransactions = await prisma.transaction.count({
       where: {
-        itemId: id,
+        tradeId: id,
         status: {
-          in: ['PENDING', 'PAYMENT_WAITING', 'PAYMENT_COMPLETED', 'IN_DELIVERY', 'DELIVERED']
+          in: ['REQUESTED', 'CONDITIONS_AGREED', 'ITEM_DELIVERED', 'PAYMENT_COMPLETED']
         }
       }
     });
@@ -247,17 +254,18 @@ export const updateItem = async (req: AuthRequest, res: Response): Promise<void>
     if (ongoingTransactions > 0) {
       res.status(400).json({
         success: false,
-        message: '거래가 진행중인 아이템은 수정할 수 없습니다.'
+        message: '거래가 진행중인 상품은 수정할 수 없습니다.'
       });
       return;
     }
 
     const updateData: any = {};
+    if (gameCategory !== undefined) updateData.gameCategory = gameCategory;
     if (title !== undefined) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (price !== undefined) updateData.price = price;
     if (quantity !== undefined) updateData.quantity = quantity;
-    if (status !== undefined) updateData.status = status as ItemStatus;
+    if (status !== undefined) updateData.status = status as TradeStatus;
     if (images !== undefined) updateData.images = images;
 
     if (Object.keys(updateData).length === 0) {
@@ -268,7 +276,7 @@ export const updateItem = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const item = await prisma.item.update({
+    const trade = await prisma.trade.update({
       where: { id },
       data: updateData,
       include: {
@@ -277,60 +285,60 @@ export const updateItem = async (req: AuthRequest, res: Response): Promise<void>
             id: true,
             username: true,
             avatarUrl: true,
+            tier: true,
+            rating: true,
           }
         },
-        game: true,
-        category: true,
       }
     });
 
     res.json({
       success: true,
-      message: 'Item updated successfully',
-      data: { item }
+      message: 'Trade updated successfully',
+      data: { trade }
     });
   } catch (error) {
-    console.error('Update item error:', error);
+    console.error('Update trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update item',
+      message: 'Failed to update trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const deleteItem = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.userId;
     const { id } = req.params;
 
-    const existingItem = await prisma.item.findUnique({
+    const existingTrade = await prisma.trade.findUnique({
       where: { id },
       select: { sellerId: true }
     });
 
-    if (!existingItem) {
+    if (!existingTrade) {
       res.status(404).json({
         success: false,
-        message: 'Item not found'
+        message: 'Trade not found'
       });
       return;
     }
 
-    if (existingItem.sellerId !== userId && req.user?.role !== 'ADMIN') {
+    if (existingTrade.sellerId !== userId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
-        message: 'Not authorized to delete this item'
+        message: 'Not authorized to delete this trade'
       });
       return;
     }
 
-    // Check if there are any ongoing transactions
+    // Check if there are any ongoing transactions (새로운 5단계 상태)
     const ongoingTransactions = await prisma.transaction.count({
       where: {
-        itemId: id,
+        tradeId: id,
         status: {
-          in: ['PENDING', 'PAYMENT_WAITING', 'PAYMENT_COMPLETED', 'IN_DELIVERY', 'DELIVERED']
+          in: ['REQUESTED', 'CONDITIONS_AGREED', 'ITEM_DELIVERED', 'PAYMENT_COMPLETED']
         }
       }
     });
@@ -338,24 +346,24 @@ export const deleteItem = async (req: AuthRequest, res: Response): Promise<void>
     if (ongoingTransactions > 0) {
       res.status(400).json({
         success: false,
-        message: '거래가 진행중인 아이템은 삭제할 수 없습니다.'
+        message: '거래가 진행중인 상품은 삭제할 수 없습니다.'
       });
       return;
     }
 
-    await prisma.item.delete({
+    await prisma.trade.delete({
       where: { id }
     });
 
     res.json({
       success: true,
-      message: 'Item deleted successfully'
+      message: 'Trade deleted successfully'
     });
   } catch (error) {
-    console.error('Delete item error:', error);
+    console.error('Delete trade error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete item',
+      message: 'Failed to delete trade',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

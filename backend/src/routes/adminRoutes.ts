@@ -16,16 +16,10 @@ router.get('/users', adminController.getAllUsers);
 router.put('/users/:id', adminController.updateUser);
 router.delete('/users/:id', adminController.deleteUser);
 
-// Items Management
-router.get('/items', adminController.getAllItems);
-router.put('/items/:id', adminController.updateItem);
-router.delete('/items/:id', adminController.deleteItem);
-
-// Games Management
-router.get('/games', adminController.getAllGames);
-router.post('/games', adminController.createGame);
-router.put('/games/:id', adminController.updateGame);
-router.delete('/games/:id', adminController.deleteGame);
+// Trades Management
+router.get('/trades', adminController.getAllTrades);
+router.put('/trades/:id', adminController.updateTrade);
+router.delete('/trades/:id', adminController.deleteTrade);
 
 // Transactions Management
 router.get('/transactions', adminController.getAllTransactions);
@@ -34,5 +28,9 @@ router.put('/transactions/:id', adminController.updateTransaction);
 // Reviews Management
 router.get('/reviews', adminController.getAllReviews);
 router.delete('/reviews/:id', adminController.deleteReview);
+
+// Reports Management
+router.get('/reports', adminController.getReports);
+router.patch('/reports/:id/process', adminController.processReport);
 
 export default router;

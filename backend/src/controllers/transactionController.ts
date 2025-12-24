@@ -1,61 +1,64 @@
 import { Response } from 'express';
 import prisma from '../config/prisma';
 import { AuthRequest } from '../middleware/auth';
-import { TransactionStatus, ItemStatus } from '@prisma/client';
+import { TransactionStatus, TradeStatus } from '@prisma/client';
 
 export const createTransaction = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.userId;
-    const { itemId, quantity, paymentMethod, meetingLocation, notes } = req.body;
+    const { tradeId, quantity, paymentMethod, meetingLocation, notes } = req.body;
 
-    if (!itemId || !quantity) {
+    if (!tradeId || !quantity) {
       res.status(400).json({
         success: false,
-        message: 'Item ID and quantity are required'
+        message: 'Trade ID and quantity are required'
       });
       return;
     }
 
     // Use transaction to ensure data consistency
     const transaction = await prisma.$transaction(async (tx) => {
-      const item = await tx.item.findUnique({
-        where: { id: itemId },
+      const trade = await tx.trade.findUnique({
+        where: { id: tradeId },
         include: { seller: true }
       });
 
-      if (!item || item.status !== ItemStatus.AVAILABLE) {
-        throw new Error('Item not found or not available');
+      if (!trade || trade.status !== TradeStatus.AVAILABLE) {
+        throw new Error('Trade not found or not available');
       }
 
-      if (item.sellerId === userId) {
-        throw new Error('Cannot buy your own item');
+      if (trade.sellerId === userId) {
+        throw new Error('Cannot buy your own trade');
       }
 
-      if (item.quantity < quantity) {
+      if (trade.quantity < quantity) {
         throw new Error('Insufficient quantity available');
       }
 
-      const totalPrice = Number(item.price) * quantity;
+      const totalPrice = Number(trade.price) * quantity;
 
-      // Create transaction
+      // Create transaction with initial status REQUESTED (1단계)
       const newTransaction = await tx.transaction.create({
         data: {
-          itemId,
-          sellerId: item.sellerId,
+          tradeId,
+          sellerId: trade.sellerId,
           buyerId: userId!,
           quantity,
           totalPrice,
           paymentMethod: paymentMethod || null,
           meetingLocation: meetingLocation || null,
           notes: notes || null,
+          status: TransactionStatus.REQUESTED, // 1단계: 거래 신청
         },
         include: {
-          item: true,
+          trade: true,
           seller: {
             select: {
               id: true,
               username: true,
               phone: true,
+              tier: true,
+              rating: true,
             }
           },
           buyer: {
@@ -63,18 +66,20 @@ export const createTransaction = async (req: AuthRequest, res: Response): Promis
               id: true,
               username: true,
               phone: true,
+              tier: true,
+              rating: true,
             }
           }
         }
       });
 
-      // Update item quantity and status
-      const newQuantity = item.quantity - quantity;
-      await tx.item.update({
-        where: { id: itemId },
+      // Update trade quantity and status
+      const newQuantity = trade.quantity - quantity;
+      await tx.trade.update({
+        where: { id: tradeId },
         data: {
           quantity: newQuantity,
-          status: newQuantity === 0 ? ItemStatus.SOLD : ItemStatus.AVAILABLE
+          status: newQuantity === 0 ? TradeStatus.SOLD : TradeStatus.AVAILABLE
         }
       });
 
@@ -127,12 +132,13 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
       prisma.transaction.findMany({
         where,
         include: {
-          item: {
+          trade: {
             select: {
               id: true,
               title: true,
               images: true,
               price: true,
+              gameCategory: true,
             }
           },
           seller: {
@@ -140,6 +146,8 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
               id: true,
               username: true,
               avatarUrl: true,
+              tier: true,
+              rating: true,
             }
           },
           buyer: {
@@ -147,6 +155,8 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
               id: true,
               username: true,
               avatarUrl: true,
+              tier: true,
+              rating: true,
             }
           }
         },
@@ -187,9 +197,17 @@ export const getTransactionById = async (req: AuthRequest, res: Response): Promi
     const transaction = await prisma.transaction.findUnique({
       where: { id },
       include: {
-        item: {
-          include: {
-            game: true
+        trade: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            price: true,
+            quantity: true,
+            images: true,
+            gameCategory: true,
+            server: true,
+            itemType: true,
           }
         },
         seller: {
@@ -198,6 +216,8 @@ export const getTransactionById = async (req: AuthRequest, res: Response): Promi
             username: true,
             phone: true,
             avatarUrl: true,
+            tier: true,
+            rating: true,
           }
         },
         buyer: {
@@ -206,6 +226,8 @@ export const getTransactionById = async (req: AuthRequest, res: Response): Promi
             username: true,
             phone: true,
             avatarUrl: true,
+            tier: true,
+            rating: true,
           }
         }
       }
@@ -285,17 +307,19 @@ export const updateTransactionStatus = async (req: AuthRequest, res: Response): 
       where: { id },
       data: updateData,
       include: {
-        item: true,
+        trade: true,
         seller: {
           select: {
             id: true,
             username: true,
+            tier: true,
           }
         },
         buyer: {
           select: {
             id: true,
             username: true,
+            tier: true,
           }
         }
       }
@@ -311,6 +335,142 @@ export const updateTransactionStatus = async (req: AuthRequest, res: Response): 
     res.status(500).json({
       success: false,
       message: 'Failed to update transaction',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+// 거래 취소 (수량 복구 및 통계 업데이트)
+export const cancelTransaction = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      res.status(400).json({
+        success: false,
+        message: 'Cancel reason is required'
+      });
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existingTransaction = await tx.transaction.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          sellerId: true,
+          buyerId: true,
+          tradeId: true,
+          quantity: true,
+          status: true,
+        }
+      });
+
+      if (!existingTransaction) {
+        throw new Error('Transaction not found');
+      }
+
+      // 권한 확인: 구매자, 판매자, 관리자만 취소 가능
+      if (
+        existingTransaction.sellerId !== userId &&
+        existingTransaction.buyerId !== userId &&
+        req.user?.role !== 'ADMIN'
+      ) {
+        throw new Error('Not authorized to cancel this transaction');
+      }
+
+      // 이미 완료된 거래는 취소 불가
+      if (existingTransaction.status === TransactionStatus.COMPLETED) {
+        throw new Error('Cannot cancel completed transaction');
+      }
+
+      // 이미 취소된 거래
+      if (existingTransaction.status === TransactionStatus.CANCELLED) {
+        throw new Error('Transaction is already cancelled');
+      }
+
+      // 거래 취소 처리
+      const cancelledBy = existingTransaction.buyerId === userId ? 'buyer' : 'seller';
+      const updatedTransaction = await tx.transaction.update({
+        where: { id },
+        data: {
+          status: TransactionStatus.CANCELLED,
+          cancelledBy,
+          cancelReason: reason,
+        },
+        include: {
+          trade: true,
+          seller: {
+            select: {
+              id: true,
+              username: true,
+              tier: true,
+            }
+          },
+          buyer: {
+            select: {
+              id: true,
+              username: true,
+              tier: true,
+            }
+          }
+        }
+      });
+
+      // Trade 수량 복구
+      await tx.trade.update({
+        where: { id: existingTransaction.tradeId },
+        data: {
+          quantity: { increment: existingTransaction.quantity },
+          status: TradeStatus.AVAILABLE, // 수량이 복구되므로 다시 판매 가능
+        }
+      });
+
+      // UserRating 취소 통계 업데이트
+      const cancellerUserId = cancelledBy === 'buyer' ? existingTransaction.buyerId : existingTransaction.sellerId;
+
+      // UserRating이 없으면 생성
+      await tx.userRating.upsert({
+        where: { userId: cancellerUserId },
+        create: {
+          userId: cancellerUserId,
+          totalReviews: 0,
+          averageRating: 0,
+          totalSales: 0,
+          totalPurchases: 0,
+          cancelledSales: cancelledBy === 'seller' ? 1 : 0,
+          cancelledPurchases: cancelledBy === 'buyer' ? 1 : 0,
+        },
+        update: {
+          cancelledSales: cancelledBy === 'seller' ? { increment: 1 } : undefined,
+          cancelledPurchases: cancelledBy === 'buyer' ? { increment: 1 } : undefined,
+        }
+      });
+
+      // User 취소 통계 업데이트
+      await tx.user.update({
+        where: { id: cancellerUserId },
+        data: {
+          cancelledTrades: { increment: 1 }
+        }
+      });
+
+      return updatedTransaction;
+    });
+
+    res.json({
+      success: true,
+      message: 'Transaction cancelled successfully',
+      data: { transaction: result }
+    });
+  } catch (error) {
+    console.error('Cancel transaction error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to cancel transaction';
+    res.status(400).json({
+      success: false,
+      message,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
