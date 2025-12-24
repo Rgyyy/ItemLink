@@ -38,7 +38,9 @@
       "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\routes\\\\itemRoutes.ts\")",
       "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\controllers\\\\itemController.ts\")",
       "Bash(git add:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []
