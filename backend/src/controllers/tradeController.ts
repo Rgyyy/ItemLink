@@ -83,7 +83,7 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
       gameCategory,
       tradeType,
       userId,
-      status = 'AVAILABLE',
+      status,
       page = '1',
       limit = '20',
       sort = 'createdAt',
@@ -94,10 +94,10 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: any = {
-      status: status as TradeStatus,
-    };
+    const where: any = {};
 
+    // status가 명시적으로 전달된 경우에만 필터링
+    if (status) where.status = status as TradeStatus;
     if (gameCategory) where.gameCategory = gameCategory as string;
     if (tradeType) where.tradeType = tradeType as string;
     if (userId) where.userId = userId as string;
