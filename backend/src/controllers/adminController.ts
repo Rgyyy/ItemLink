@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest } from '../types';
 import prisma from '../config/prisma';
 import { ReportStatus } from '@prisma/client';
 
@@ -204,16 +204,23 @@ export const getAllTrades = async (req: AuthRequest, res: Response): Promise<voi
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          seller: { select: { username: true, email: true, tier: true } }
+          user: { select: { username: true, email: true, tier: true } }
         }
       }),
       prisma.trade.count({ where })
     ]);
 
+    // user를 seller로 매핑
+    const tradesWithSeller = trades.map((trade: any) => ({
+      ...trade,
+      seller: trade.user,
+      user: undefined,
+    }));
+
     res.json({
       success: true,
       data: {
-        trades,
+        trades: tradesWithSeller,
         pagination: {
           page: Number(page),
           limit: Number(limit),
@@ -241,14 +248,21 @@ export const updateTrade = async (req: AuthRequest, res: Response): Promise<void
       where: { id },
       data: { status },
       include: {
-        seller: { select: { username: true } }
+        user: { select: { username: true, tier: true } }
       }
     });
+
+    // user를 seller로 매핑
+    const responseData = {
+      ...trade,
+      seller: (trade as any).user,
+      user: undefined,
+    };
 
     res.json({
       success: true,
       message: 'Trade updated successfully',
-      data: trade
+      data: responseData
     });
   } catch (error) {
     console.error('Update trade error:', error);
@@ -300,7 +314,7 @@ export const getAllTransactions = async (req: AuthRequest, res: Response): Promi
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          trade: { select: { title: true, price: true } },
+          trade: { select: { title: true } },
           buyer: { select: { username: true, email: true } },
           seller: { select: { username: true, email: true } }
         }

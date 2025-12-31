@@ -1,10 +1,6 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt';
-import { JWTPayload } from '../types';
-
-export interface AuthRequest extends Request {
-  user?: JWTPayload;
-}
+import { AuthRequest } from '../types';
 
 export const authenticate = (
   req: AuthRequest,

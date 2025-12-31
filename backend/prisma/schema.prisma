@@ -13,15 +13,22 @@ datasource db {
 // ============================================================================
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  username        String    @unique
-  passwordHash    String    @map("password_hash")
-  fullName        String?   @map("full_name")
+  id              String        @id @default(uuid())
+  email           String        @unique
+  username        String        @unique
+  passwordHash    String?       @map("password_hash")
+  fullName        String?       @map("full_name")
   phone           String?
-  avatarUrl       String?   @map("avatar_url")
-  isVerified      Boolean   @default(false) @map("is_verified")
-  isActive        Boolean   @default(true) @map("is_active")
+  avatarUrl       String?       @map("avatar_url")
+  isVerified      Boolean       @default(false) @map("is_verified")
+  isActive        Boolean       @default(true) @map("is_active")
+
+  // 소셜 로그인 필드
+  provider        AuthProvider  @default(LOCAL)
+  providerId      String?       @map("provider_id")
+
+  // 탈퇴 관련 필드
+  deletedAt       DateTime?     @map("deleted_at")
 
   // 신뢰 시스템 필드
   tier            UserTier  @default(NEWBIE)
@@ -38,8 +45,8 @@ model User {
   role            Role      @default(USER)
 
   // Relations
-  favorites          Favorite[]
-  trades             Trade[]              @relation("SellerTrades")
+  trades             Trade[]              @relation("UserTrades")
+  comments           Comment[]
   receivedMessages   Message[]            @relation("ReceiverMessages")
   sentMessages       Message[]            @relation("SenderMessages")
   receivedReviews    Review[]             @relation("RevieweeReviews")
@@ -77,30 +84,26 @@ model UserRating {
 
 model Trade {
   id           String      @id @default(uuid())
-  sellerId     String      @map("seller_id")
+  userId       String      @map("user_id")
 
   // 게임 카테고리 (하드코딩된 게임명 문자열)
   gameCategory String      @map("game_category")
 
   title        String
   description  String
-  price        Decimal     @db.Decimal(12, 2)
-  quantity     Int         @default(1)
-  server       String?
   images       String[]    @default([])
   views        Int         @default(0)
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
-  itemType     ItemType    @map("item_type")
   tradeType    TradeType   @default(SELL) @map("trade_type")
   status       TradeStatus @default(AVAILABLE)
 
   // Relations
-  favorites    Favorite[]
-  seller       User          @relation("SellerTrades", fields: [sellerId], references: [id], onDelete: Cascade)
+  user         User          @relation("UserTrades", fields: [userId], references: [id], onDelete: Cascade)
+  comments     Comment[]
   transactions Transaction[]
 
-  @@index([sellerId])
+  @@index([userId])
   @@index([gameCategory])
   @@index([status])
   @@index([tradeType])
@@ -108,16 +111,40 @@ model Trade {
   @@map("trades")
 }
 
-model Favorite {
+model Comment {
   id        String   @id @default(uuid())
-  userId    String   @map("user_id")
   tradeId   String   @map("trade_id")
+  userId    String   @map("user_id")
+  content   String
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
   trade     Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, tradeId])
-  @@map("favorites")
+  @@index([tradeId])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("comments")
+}
+
+// ============================================================================
+// Email Verification Models
+// ============================================================================
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  verified  Boolean  @default(false)
+  attempts  Int      @default(0)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("email_verifications")
 }
 
 // ============================================================================
@@ -239,6 +266,13 @@ enum Role {
   ADMIN
 }
 
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  NAVER
+  KAKAO
+}
+
 enum UserTier {
   NEWBIE   // 거래 0-5건
   NORMAL   // 거래 6-20건, 평점 3.0+
@@ -246,12 +280,6 @@ enum UserTier {
   VETERAN  // 거래 51건+, 평점 4.5+
 }
 
-enum ItemType {
-  GAME_MONEY
-  ITEM
-  ACCOUNT
-  OTHER
-}
 
 enum TradeType {
   SELL
@@ -262,6 +290,7 @@ enum TradeStatus {
   AVAILABLE
   RESERVED
   SOLD
+  CLOSED
   HIDDEN
 }
 

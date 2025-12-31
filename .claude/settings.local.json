@@ -40,7 +40,13 @@
       "Bash(git add:*)",
       "Bash(git rm:*)",
       "Bash(git commit:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(del messageRoutes.ts reportRoutes.ts reviewRoutes.ts transactionRoutes.ts)",
+      "Bash(rm:*)",
+      "Bash(git checkout:*)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset:*)",
+      "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\config\\\\database.ts\")",
+      "Bash(timeout 10 npm run dev:*)"
     ],
     "deny": [],
     "ask": []

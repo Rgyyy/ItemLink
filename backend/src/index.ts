@@ -1,14 +1,14 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import session from 'express-session';
 import prisma from './config/prisma';
+import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
+import socialAuthRoutes from './routes/socialAuthRoutes';
 import tradeRoutes from './routes/tradeRoutes';
-import transactionRoutes from './routes/transactionRoutes';
+import commentRoutes from './routes/commentRoutes';
 import adminRoutes from './routes/adminRoutes';
-import reviewRoutes from './routes/reviewRoutes';
-import messageRoutes from './routes/messageRoutes';
-import reportRoutes from './routes/reportRoutes';
 
 dotenv.config();
 
@@ -22,6 +22,26 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// 정적 파일 제공 (업로드된 이미지)
+app.use('/uploads', express.static('uploads'));
+
+// Session 미들웨어 (소셜 로그인용)
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'your-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000, // 24시간
+    },
+  })
+);
+
+// Passport 초기화
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -57,11 +77,9 @@ app.get('/api/test-db', async (req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', socialAuthRoutes);
 app.use('/api/trades', tradeRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/reports', reportRoutes);
+app.use('/api/comments', commentRoutes);
 app.use('/api/admin', adminRoutes);
 
 // 404 handler

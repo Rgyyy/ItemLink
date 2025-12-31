@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../config/prisma';
 import { generateToken } from '../utils/jwt';
+import { emailService } from '../services/emailService';
+import { validatePassword } from '../utils/passwordValidator';
+import { AuthRequest } from '../types';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -16,21 +19,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    // 이메일 인증 확인
+    const isEmailVerified = await emailService.isEmailVerified(email);
+    if (!isEmailVerified) {
       res.status(400).json({
         success: false,
-        message: 'Invalid email format'
-      });
-      return;
-    }
-
-    // Password strength validation
-    if (password.length < 6) {
-      res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long'
+        message: 'Email not verified. Please verify your email first.'
       });
       return;
     }
@@ -64,6 +58,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         passwordHash,
         fullName: fullName || null,
         phone: phone || null,
+        isVerified: true, // 이메일 인증 완료
+        provider: 'LOCAL',
       },
       select: {
         id: true,
@@ -75,6 +71,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         isVerified: true,
         createdAt: true,
       }
+    });
+
+    // 인증 완료된 verification 레코드 삭제
+    await prisma.emailVerification.deleteMany({
+      where: { email, verified: true },
     });
 
     // Generate token
@@ -145,6 +146,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Verify password
+    if (!user.passwordHash) {
+      res.status(401).json({
+        success: false,
+        message: 'This account uses social login. Please login with your social account.'
+      });
+      return;
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
@@ -331,10 +340,12 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     }
 
     // Password strength validation
-    if (newPassword.length < 6) {
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
       res.status(400).json({
         success: false,
-        message: 'New password must be at least 6 characters long'
+        message: 'Password does not meet requirements',
+        errors: passwordValidation.errors
       });
       return;
     }
@@ -353,6 +364,14 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     }
 
     // Verify current password
+    if (!user.passwordHash) {
+      res.status(400).json({
+        success: false,
+        message: 'This account uses social login and cannot change password.'
+      });
+      return;
+    }
+
     const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
 
     if (!isPasswordValid) {
@@ -381,6 +400,170 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
     res.status(500).json({
       success: false,
       message: 'Failed to change password',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+// 이메일 인증번호 발송
+export const sendVerificationCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      });
+      return;
+    }
+
+    // 이미 가입된 이메일 체크
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      res.status(409).json({
+        success: false,
+        message: 'Email already registered',
+      });
+      return;
+    }
+
+    await emailService.sendVerificationCode(email);
+
+    res.json({
+      success: true,
+      message: 'Verification code sent successfully',
+    });
+  } catch (error) {
+    console.error('Send verification code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification code',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// 인증번호 확인
+export const verifyEmailCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      res.status(400).json({
+        success: false,
+        message: 'Email and code are required',
+      });
+      return;
+    }
+
+    const isValid = await emailService.verifyCode(email, code);
+
+    if (!isValid) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+    });
+  } catch (error) {
+    console.error('Verify email code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Verification failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
+// 회원 탈퇴
+export const deleteAccount = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.userId;
+    const { password } = req.body;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+      return;
+    }
+
+    if (!password) {
+      res.status(400).json({
+        success: false,
+        message: 'Password is required for account deletion'
+      });
+      return;
+    }
+
+    // Get user
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+      return;
+    }
+
+    // 소셜 로그인 사용자 체크
+    if (!user.passwordHash) {
+      res.status(400).json({
+        success: false,
+        message: 'Social login accounts cannot be deleted with password verification'
+      });
+      return;
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+
+    if (!isPasswordValid) {
+      res.status(401).json({
+        success: false,
+        message: 'Incorrect password'
+      });
+      return;
+    }
+
+    // 계정 비활성화 + 개인정보 익명화
+    const randomHash = await bcrypt.hash(Math.random().toString(), 10);
+    const deletedEmail = `deleted_user_${user.id}@deleted.com`;
+    const deletedUsername = `${user.username} (탈퇴한 사용자)`;
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+        email: deletedEmail,
+        username: deletedUsername,
+        fullName: null,
+        phone: null,
+        avatarUrl: null,
+        passwordHash: randomHash,
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Account deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete account',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

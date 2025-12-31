@@ -1,3 +1,18 @@
+import { Request } from 'express';
+
+export interface JWTPayload {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+// Extend Express User type for Passport
+declare global {
+  namespace Express {
+    interface User extends JWTPayload {}
+  }
+}
+
 export interface User {
   id: string;
   email: string;
@@ -41,7 +56,6 @@ export interface Item {
   title: string;
   description: string;
   price: number;
-  quantity: number;
   server?: string;
   item_type: 'game_money' | 'item' | 'account' | 'other';
   status: 'available' | 'reserved' | 'sold' | 'hidden';
@@ -56,7 +70,6 @@ export interface Transaction {
   item_id: string;
   seller_id: string;
   buyer_id: string;
-  quantity: number;
   total_price: number;
   status: 'pending' | 'payment_waiting' | 'payment_completed' |
           'in_delivery' | 'delivered' | 'completed' | 'cancelled' | 'refunded';
@@ -104,10 +117,8 @@ export interface Message {
   created_at: Date;
 }
 
-export interface JWTPayload {
-  userId: string;
-  email: string;
-  role: string;
+export interface AuthRequest extends Request {
+  user?: JWTPayload;
 }
 
 export interface ApiResponse<T = any> {

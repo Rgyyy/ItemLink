@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import prisma from '../config/prisma';
-import { AuthRequest } from '../middleware/auth';
-import { ItemType, TradeStatus } from '@prisma/client';
+import { AuthRequest } from '../types';
+import { TradeStatus } from '@prisma/client';
 import { GAME_CATEGORIES } from '../constants/games';
 
 export const createTrade = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -11,10 +11,6 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
       gameCategory,
       title,
       description,
-      price,
-      quantity,
-      server,
-      itemType,
       tradeType,
       images
     } = req.body;
@@ -38,45 +34,38 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    // Price 검증 - 선택사항, 있으면 음수만 체크
-    if (price !== undefined && price < 0) {
-      res.status(400).json({
-        success: false,
-        message: 'Price must be non-negative'
-      });
-      return;
-    }
-
     const trade = await prisma.trade.create({
       data: {
-        sellerId: userId!,
+        userId: userId!,
         gameCategory: gameCategory.trim(),
         title: title.trim(),
         description: description.trim(),
-        price: price || 0,
-        quantity: quantity || 1,
-        server: server || null,
-        itemType: (itemType as ItemType) || 'OTHER',
         tradeType: tradeType || 'SELL',
         images: images || [],
       },
       include: {
-        seller: {
+        user: {
           select: {
             id: true,
             username: true,
             avatarUrl: true,
             tier: true,
-            rating: true,
           }
         },
       }
     });
 
+    // user를 seller로 매핑 (프론트엔드 호환성)
+    const responseData = {
+      ...trade,
+      seller: trade.user,
+      user: undefined,
+    };
+
     res.status(201).json({
       success: true,
       message: 'Trade created successfully',
-      data: { trade }
+      data: { trade: responseData }
     });
   } catch (error) {
     console.error('Create trade error:', error);
@@ -92,10 +81,8 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
   try {
     const {
       gameCategory,
-      itemType,
       tradeType,
-      minPrice,
-      maxPrice,
+      userId,
       status = 'AVAILABLE',
       page = '1',
       limit = '20',
@@ -112,22 +99,19 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
     };
 
     if (gameCategory) where.gameCategory = gameCategory as string;
-    if (itemType) where.itemType = itemType as ItemType;
     if (tradeType) where.tradeType = tradeType as string;
-    if (minPrice) where.price = { ...where.price, gte: parseFloat(minPrice as string) };
-    if (maxPrice) where.price = { ...where.price, lte: parseFloat(maxPrice as string) };
+    if (userId) where.userId = userId as string;
 
     const [trades, total] = await Promise.all([
       prisma.trade.findMany({
         where,
         include: {
-          seller: {
+          user: {
             select: {
               id: true,
               username: true,
               avatarUrl: true,
               tier: true,
-              rating: true,
             }
           },
         },
@@ -140,10 +124,17 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
       prisma.trade.count({ where })
     ]);
 
+    // user를 seller로 매핑 (프론트엔드 호환성)
+    const tradesWithSeller = trades.map(trade => ({
+      ...trade,
+      seller: trade.user,
+      user: undefined,
+    }));
+
     res.json({
       success: true,
       data: {
-        trades,
+        trades: tradesWithSeller,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -165,18 +156,17 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
 export const getTradeById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const userId = req.user?.userId;
+    const currentUserId = req.user?.userId;
 
     const trade = await prisma.trade.findUnique({
       where: { id },
       include: {
-        seller: {
+        user: {
           select: {
             id: true,
             username: true,
             avatarUrl: true,
             tier: true,
-            rating: true,
           }
         },
       }
@@ -190,9 +180,9 @@ export const getTradeById = async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    // Increment view count only if not the seller and user is logged in
+    // Increment view count only if not the author and user is logged in
     let updatedViews = trade.views;
-    if (userId && trade.sellerId !== userId) {
+    if (currentUserId && trade.userId !== currentUserId) {
       await prisma.trade.update({
         where: { id },
         data: { views: { increment: 1 } }
@@ -200,9 +190,17 @@ export const getTradeById = async (req: AuthRequest, res: Response): Promise<voi
       updatedViews = trade.views + 1;
     }
 
+    // user를 seller로 매핑 (프론트엔드 호환성)
+    const responseData = {
+      ...trade,
+      views: updatedViews,
+      seller: trade.user,
+      user: undefined,
+    };
+
     res.json({
       success: true,
-      data: { trade: { ...trade, views: updatedViews } }
+      data: { trade: responseData }
     });
   } catch (error) {
     console.error('Get trade error:', error);
@@ -216,13 +214,13 @@ export const getTradeById = async (req: AuthRequest, res: Response): Promise<voi
 
 export const updateTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.userId;
+    const currentUserId = req.user?.userId;
     const { id } = req.params;
-    const { gameCategory, title, description, price, quantity, status, images } = req.body;
+    const { gameCategory, title, description, status, images } = req.body;
 
     const existingTrade = await prisma.trade.findUnique({
       where: { id },
-      select: { sellerId: true }
+      select: { userId: true }
     });
 
     if (!existingTrade) {
@@ -233,28 +231,10 @@ export const updateTrade = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    if (existingTrade.sellerId !== userId && req.user?.role !== 'ADMIN') {
+    if (existingTrade.userId !== currentUserId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
         message: 'Not authorized to update this trade'
-      });
-      return;
-    }
-
-    // Check if there are any ongoing transactions (새로운 5단계 상태)
-    const ongoingTransactions = await prisma.transaction.count({
-      where: {
-        tradeId: id,
-        status: {
-          in: ['REQUESTED', 'CONDITIONS_AGREED', 'ITEM_DELIVERED', 'PAYMENT_COMPLETED']
-        }
-      }
-    });
-
-    if (ongoingTransactions > 0) {
-      res.status(400).json({
-        success: false,
-        message: '거래가 진행중인 상품은 수정할 수 없습니다.'
       });
       return;
     }
@@ -263,8 +243,6 @@ export const updateTrade = async (req: AuthRequest, res: Response): Promise<void
     if (gameCategory !== undefined) updateData.gameCategory = gameCategory;
     if (title !== undefined) updateData.title = title;
     if (description !== undefined) updateData.description = description;
-    if (price !== undefined) updateData.price = price;
-    if (quantity !== undefined) updateData.quantity = quantity;
     if (status !== undefined) updateData.status = status as TradeStatus;
     if (images !== undefined) updateData.images = images;
 
@@ -280,22 +258,28 @@ export const updateTrade = async (req: AuthRequest, res: Response): Promise<void
       where: { id },
       data: updateData,
       include: {
-        seller: {
+        user: {
           select: {
             id: true,
             username: true,
             avatarUrl: true,
             tier: true,
-            rating: true,
           }
         },
       }
     });
 
+    // user를 seller로 매핑 (프론트엔드 호환성)
+    const responseData = {
+      ...trade,
+      seller: trade.user,
+      user: undefined,
+    };
+
     res.json({
       success: true,
       message: 'Trade updated successfully',
-      data: { trade }
+      data: { trade: responseData }
     });
   } catch (error) {
     console.error('Update trade error:', error);
@@ -309,12 +293,12 @@ export const updateTrade = async (req: AuthRequest, res: Response): Promise<void
 
 export const deleteTrade = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.userId;
+    const currentUserId = req.user?.userId;
     const { id } = req.params;
 
     const existingTrade = await prisma.trade.findUnique({
       where: { id },
-      select: { sellerId: true }
+      select: { userId: true }
     });
 
     if (!existingTrade) {
@@ -325,28 +309,10 @@ export const deleteTrade = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    if (existingTrade.sellerId !== userId && req.user?.role !== 'ADMIN') {
+    if (existingTrade.userId !== currentUserId && req.user?.role !== 'ADMIN') {
       res.status(403).json({
         success: false,
         message: 'Not authorized to delete this trade'
-      });
-      return;
-    }
-
-    // Check if there are any ongoing transactions (새로운 5단계 상태)
-    const ongoingTransactions = await prisma.transaction.count({
-      where: {
-        tradeId: id,
-        status: {
-          in: ['REQUESTED', 'CONDITIONS_AGREED', 'ITEM_DELIVERED', 'PAYMENT_COMPLETED']
-        }
-      }
-    });
-
-    if (ongoingTransactions > 0) {
-      res.status(400).json({
-        success: false,
-        message: '거래가 진행중인 상품은 삭제할 수 없습니다.'
       });
       return;
     }
