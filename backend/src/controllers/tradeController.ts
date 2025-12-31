@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import prisma from '../config/prisma';
 import { AuthRequest } from '../types';
-import { TradeStatus } from '@prisma/client';
+import { TradeStatus, BoardType } from '@prisma/client';
 import { GAME_CATEGORIES } from '../constants/games';
 
 export const createTrade = async (req: AuthRequest, res: Response): Promise<void> => {
