@@ -8,6 +8,7 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
   try {
     const userId = req.user?.userId;
     const {
+      boardType,
       gameCategory,
       title,
       description,
@@ -16,20 +17,19 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
     } = req.body;
 
     // Validation
-    if (!gameCategory || !title || !description) {
+    if (!title || !description) {
       res.status(400).json({
         success: false,
-        message: 'Missing required fields (gameCategory, title, description)'
+        message: 'Missing required fields (title, description)'
       });
       return;
     }
 
-    // 게임 카테고리 검증 - 하드코딩된 목록에 없어도 허용 (사용자 직접 입력)
-    // 단, 빈 값은 불가
-    if (!gameCategory.trim()) {
+    // boardType이 TRADE인 경우에만 gameCategory 필수
+    if (boardType === 'TRADE' && (!gameCategory || !gameCategory.trim())) {
       res.status(400).json({
         success: false,
-        message: 'Game category cannot be empty'
+        message: 'Game category is required for trade posts'
       });
       return;
     }
@@ -37,7 +37,8 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
     const trade = await prisma.trade.create({
       data: {
         userId: userId!,
-        gameCategory: gameCategory.trim(),
+        boardType: boardType || 'TRADE',
+        gameCategory: gameCategory?.trim() || null,
         title: title.trim(),
         description: description.trim(),
         tradeType: tradeType || 'SELL',
@@ -80,6 +81,7 @@ export const createTrade = async (req: AuthRequest, res: Response): Promise<void
 export const getTrades = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
+      boardType,
       gameCategory,
       tradeType,
       userId,
@@ -96,6 +98,10 @@ export const getTrades = async (req: AuthRequest, res: Response): Promise<void> 
 
     const where: any = {};
 
+    // boardType 필터링 (기본값: TRADE)
+    if (boardType) {
+      where.boardType = boardType as string;
+    }
     // status가 명시적으로 전달된 경우에만 필터링
     if (status) where.status = status as TradeStatus;
     if (gameCategory) where.gameCategory = gameCategory as string;

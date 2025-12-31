@@ -86,8 +86,11 @@ model Trade {
   id           String      @id @default(uuid())
   userId       String      @map("user_id")
 
-  // 게임 카테고리 (하드코딩된 게임명 문자열)
-  gameCategory String      @map("game_category")
+  // 게시판 타입 (거래글/자유게시판/건의게시판)
+  boardType    BoardType   @default(TRADE) @map("board_type")
+
+  // 게임 카테고리 (하드코딩된 게임명 문자열) - 거래글에만 사용
+  gameCategory String?     @map("game_category")
 
   title        String
   description  String
@@ -104,6 +107,7 @@ model Trade {
   transactions Transaction[]
 
   @@index([userId])
+  @@index([boardType])
   @@index([gameCategory])
   @@index([status])
   @@index([tradeType])
@@ -280,6 +284,12 @@ enum UserTier {
   VETERAN  // 거래 51건+, 평점 4.5+
 }
 
+
+enum BoardType {
+  TRADE       // 거래글
+  FREE        // 자유게시판
+  SUGGESTION  // 건의게시판
+}
 
 enum TradeType {
   SELL
