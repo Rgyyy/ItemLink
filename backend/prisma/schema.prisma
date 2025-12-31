@@ -289,6 +289,7 @@ enum BoardType {
   TRADE       // 거래글
   FREE        // 자유게시판
   SUGGESTION  // 건의게시판
+  REPORT      // 신고하기
 }
 
 enum TradeType {
