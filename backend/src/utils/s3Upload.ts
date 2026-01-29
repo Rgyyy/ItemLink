@@ -1,5 +1,8 @@
 import { PutObjectCommand, DeleteObjectCommand, PutObjectCommandInput } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET_NAME, getCdnUrl, isS3Enabled } from '../config/s3';
+
+// Re-export isS3Enabled for use in controllers
+export { isS3Enabled };
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
