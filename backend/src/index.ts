@@ -2,6 +2,7 @@ import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import session from 'express-session';
+import helmet from 'helmet';
 import prisma from './config/prisma';
 import passport from './config/passport';
 import authRoutes from './routes/authRoutes';
@@ -12,28 +13,56 @@ import adminRoutes from './routes/adminRoutes';
 
 dotenv.config();
 
+// 환경 변수 필수 검증
+if (process.env.NODE_ENV === 'production') {
+  const requiredEnvVars = ['SESSION_SECRET', 'JWT_SECRET', 'DATABASE_URL'];
+  for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+      throw new Error(`Missing required environment variable: ${envVar}`);
+    }
+  }
+}
+
 const app: Application = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Helmet 보안 헤더 적용
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // 이미지 로딩을 위해 필요
+}));
+
+// CORS 설정 (JWT 기반이므로 credentials 불필요)
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  credentials: false, // CSRF 공격 방지를 위해 비활성화
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 정적 파일 제공 (업로드된 이미지)
-app.use('/uploads', express.static('uploads'));
+// 정적 파일 직접 제공 제거 - 컨트롤러를 통한 접근 제어로 변경
+// app.use('/uploads', express.static('uploads')); // 보안 위험으로 제거됨
 
 // Session 미들웨어 (소셜 로그인용)
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+  console.warn('⚠️  WARNING: Using default session secret in development. Set SESSION_SECRET in .env for production.');
+}
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'your-session-secret',
+    secret: sessionSecret || 'dev-session-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === 'production',
+      httpOnly: true, // XSS 방지
+      sameSite: 'lax', // CSRF 방지
       maxAge: 24 * 60 * 60 * 1000, // 24시간
     },
   })
@@ -92,11 +121,15 @@ app.use((req: Request, res: Response) => {
 
 // Error handler
 app.use((err: Error, req: Request, res: Response, next: any) => {
-  console.error(err.stack);
+  console.error('Server error:', err.stack);
+
+  // 프로덕션에서는 민감한 정보 노출 방지
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    ...(isDevelopment && { error: err.message, stack: err.stack })
   });
 });
 

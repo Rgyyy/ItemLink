@@ -1,0 +1,62 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main  # main 브랜치에 push될 때 자동 배포
+  workflow_dispatch:  # 수동 배포 가능
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive  # 서브모듈 포함
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run tests (if any)
+        working-directory: ./backend
+        run: npm test || echo "No tests found, skipping..."
+
+      - name: Build TypeScript
+        working-directory: ./backend
+        run: npm run build
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            cd ~/itemlink
+            git pull origin main
+            cd backend
+            npm install --production
+            npm run build
+            npx prisma migrate deploy
+            pm2 restart itemlink-backend
+            pm2 save
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi

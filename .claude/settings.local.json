@@ -46,7 +46,9 @@
       "Bash(git checkout:*)",
       "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes npx prisma migrate reset:*)",
       "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\config\\\\database.ts\")",
-      "Bash(timeout 10 npm run dev:*)"
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(cat:*)",
+      "Bash(git submodule:*)"
     ],
     "deny": [],
     "ask": []

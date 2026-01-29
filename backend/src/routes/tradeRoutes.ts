@@ -6,7 +6,7 @@ import {
   updateTrade,
   deleteTrade
 } from '../controllers/tradeController';
-import { uploadTradeImage, uploadTradeImages } from '../controllers/uploadController';
+import { uploadTradeImage, uploadTradeImages, serveTradeImage } from '../controllers/uploadController';
 import { authenticate } from '../middleware/auth';
 import { upload } from '../config/upload';
 
@@ -21,5 +21,8 @@ router.delete('/:id', authenticate, deleteTrade);
 // 이미지 업로드 라우트
 router.post('/upload/image', authenticate, upload.single('image'), uploadTradeImage);
 router.post('/upload/images', authenticate, upload.array('images', 5), uploadTradeImages);
+
+// 이미지 제공 라우트 (보안 강화: 접근 제어)
+router.get('/images/:filename', serveTradeImage);
 
 export default router;
