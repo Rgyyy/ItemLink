@@ -48,7 +48,11 @@
       "Bash(del \"C:\\\\OZcodingschool\\\\itemlink\\\\backend\\\\src\\\\config\\\\database.ts\")",
       "Bash(timeout 10 npm run dev:*)",
       "Bash(cat:*)",
-      "Bash(git submodule:*)"
+      "Bash(git submodule:*)",
+      "Bash(git config:*)",
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git -C \"C:/OZcodingschool/itemlink/frontend\" remote -v)"
     ],
     "deny": [],
     "ask": []
